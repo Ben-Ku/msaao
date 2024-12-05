@@ -1,3 +1,5 @@
+use std::io::BufRead;
+
 pub use blade_graphics as gpu;
 use bytemuck::{Pod, Zeroable};
 pub use glam::*;
@@ -187,6 +189,8 @@ impl State {
 
         ctx.destroy_buffer(upload_buffer);
 
+        load_sponza();
+
         Self {
             pipeline,
             command_encoder,
@@ -228,14 +232,12 @@ impl State {
             );
 
             let q = vp * p;
-            dbg!(q);
 
             for mesh in self.meshes.iter() {
                 // rc.bind(1, )
                 // rc.bind(0, )
                 rc.bind_vertex(0, mesh.vertex_buf);
                 rc.draw(0, 3, 0, 1);
-                dbg!("draw here");
             }
         }
         self.command_encoder.present(frame);
@@ -278,6 +280,90 @@ impl Camera {
         self.projection() * self.view()
     }
 }
+pub fn load_sponza() {
+    dbg!("loading sponza");
+    let path = std::path::Path::new("src/assets/sponza/sponza.obj");
+    parse_obj_file(path);
+    // if let Ok(s) = std::fs::read_to_string() {
+    // } else {
+    //     parse_obj_file()
+    //     dbg!("could not find sponza obj");
+    // }
+}
+
+pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) {
+    let mut vertices = vec![];
+    let mut normals = vec![];
+    let mut index_buffer = vec![];
+    // pub fn parse_obj_file<R: std::io::BufRead>(file: R) {
+    if let Ok(file) = std::fs::File::open(path) {
+        let mut reader = std::io::BufReader::new(file);
+        let mut lines = reader.lines();
+        while let Some(Ok(line)) = lines.next() {
+            if let Some((pre, rest)) = line.split_once(" ") {
+                match pre {
+                    "v" => {
+                        let mut v = Vec3A::ZERO;
+                        for (i, x) in rest.split(" ").enumerate() {
+                            if let Ok(x) = x.parse() {
+                                v[i] = x;
+                            }
+                        }
+                        vertices.push(v);
+                    }
+                    "vn" => {
+                        let mut v = Vec3A::ZERO;
+                        for (i, x) in rest.split(" ").enumerate() {
+                            if let Ok(x) = x.parse() {
+                                v[i] = x;
+                            }
+                        }
+                        normals.push(v);
+                    }
+                    "f" => {
+                        let vals = rest.split(" ");
+                        let mut indices = vec![];
+                        for val in vals {
+                            if let Some((v_idx, uv_idx)) = val.split_once("/") {
+                                if let Ok(v_idx) = v_idx.parse::<u32>() {
+                                    indices.push(v_idx);
+                                }
+                            }
+                        }
+                        let n = indices.len();
+                        match n {
+                            3 => {
+                                index_buffer.extend(indices);
+                            }
+                            4 => {
+                                index_buffer.push(indices[0]);
+                                index_buffer.push(indices[1]);
+                                index_buffer.push(indices[2]);
+
+                                index_buffer.push(indices[2]);
+                                index_buffer.push(indices[3]);
+                                index_buffer.push(indices[0]);
+                            }
+                            _ => {
+                                dbg!(format!("weird idx len {n}"));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // for line in reader.lines() {
+        //     let (a, rest)
+        //     if let Some
+        //     // dbg!(line);
+        // }
+        // while let Some(line) = file.read_line()
+    }
+
+    dbg!(vertices.len());
+    dbg!(normals.len());
+}
 
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
@@ -309,6 +395,7 @@ fn main() {
                         _ => {}
                     },
                     winit::event::WindowEvent::CloseRequested => {
+                        dbg!("closing");
                         target.exit();
                     }
                     winit::event::WindowEvent::RedrawRequested => {

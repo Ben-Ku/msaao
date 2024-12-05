@@ -16,7 +16,7 @@ struct Vertex {
 @vertex
 fn vs_main(vertex: Vertex) -> VertexOutput {
     var pos = vec4(vertex.pos, 1.0);
-    pos = globals.mvp_transform * pos;
+    // pos = globals.mvp_transform * pos;
     return VertexOutput(pos);
 }
 
