@@ -1,0 +1,12 @@
+[package]
+name = "ssao"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+blade-graphics = { git="https://github.com/kvark/blade" }
+blade-macros = { git="https://github.com/kvark/blade" }
+glam = "*"
+bytemuck = "*"
+winit = "0.30"
+
