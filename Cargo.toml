@@ -9,4 +9,5 @@ blade-macros = { git="https://github.com/kvark/blade" }
 glam = "*"
 bytemuck = "*"
 winit = "0.30"
+nanorand = "*"
 

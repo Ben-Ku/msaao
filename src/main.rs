@@ -1,3 +1,4 @@
+use nanorand::Rng;
 use std::io::BufRead;
 
 pub use blade_graphics as gpu;
@@ -8,38 +9,52 @@ pub const PI: f32 = 3.14159265358979323846264338327950288;
 pub const TAU: f32 = 2.0 * PI;
 
 #[repr(C)]
-#[derive(blade_macros::ShaderData, Clone, Copy, Pod, Zeroable)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct Globals {
     mvp_transform: [[f32; 4]; 4],
 }
 
-#[derive(blade_macros::Vertex)]
+#[derive(blade_macros::ShaderData)]
+pub struct Params {
+    pub globals: Globals,
+}
+
+#[derive(blade_macros::Vertex, Debug)]
 pub struct Vertex {
-    pos: [f32; 3],
+    pub pos: [f32; 3],
+    pub normal: [f32; 3],
 }
 
 pub struct Mesh {
-    vertex_buf: gpu::BufferPiece,
+    pub vertex_buf: gpu::BufferPiece,
+    pub index_buf: Option<gpu::BufferPiece>,
+    pub num_vertices: usize,
+    pub num_indices: usize,
+}
+
+pub struct CpuMesh {
+    pub vertices: Vec<Vec3A>,
+    pub indices: Vec<usize>,
 }
 
 pub struct Camera {
-    pos: Vec3A,
-    x_angle: f32,
-    y_angle: f32,
-    fov_rad: f32,
-    aspect: f32,
+    pub pos: Vec3A,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub fov_rad: f32,
+    pub aspect: f32,
 }
 
 pub struct Cube {}
 
 pub struct State {
-    pipeline: gpu::RenderPipeline,
-    command_encoder: gpu::CommandEncoder,
-    ctx: gpu::Context,
-    surface: gpu::Surface,
-    prev_sync_point: Option<gpu::SyncPoint>,
-    meshes: Vec<Mesh>,
-    camera: Camera,
+    pub pipeline: gpu::RenderPipeline,
+    pub command_encoder: gpu::CommandEncoder,
+    pub ctx: gpu::Context,
+    pub surface: gpu::Surface,
+    pub prev_sync_point: Option<gpu::SyncPoint>,
+    pub meshes: Vec<Mesh>,
+    pub camera: Camera,
 }
 
 impl State {
@@ -82,7 +97,7 @@ impl State {
 
         let pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "main",
-            data_layouts: &[&<Globals as gpu::ShaderData>::layout()],
+            data_layouts: &[&<Params as gpu::ShaderData>::layout()],
             vertex: shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
@@ -148,28 +163,66 @@ impl State {
             ..Default::default()
         });
 
-        let vertices = [
-            Vertex {
-                pos: [0.2, 0.2, 0.0],
-            },
-            Vertex {
-                pos: [0.8, 0.2, 0.0],
-            },
-            Vertex {
-                pos: [0.5, 0.8, 0.0],
-            },
+        let mut vertices = [
+            vec3a(0.2, 0.2, -1.0),
+            vec3a(0.8, 0.2, -1.0),
+            vec3a(0.5, 0.8, -1.0),
+            vec3a(-0.2, -0.2, -1.0),
+            vec3a(-0.8, -0.2, -1.0),
+            vec3a(-0.5, -0.8, -1.0),
         ];
+
+        let mut v = vertices.clone();
+        v = v.map(|v| {
+            let mut a = -v;
+            a.z = -a.z;
+            a
+        });
+
+        // let mut vertices = vertices.to_vec();
+        // vertices.extend(v);
+
+        let normals = vertices
+            .chunks(3)
+            .map(|c| {
+                let v0 = c[0];
+                let v1 = c[1];
+                let v2 = c[2];
+                let n = (v1 - v0).cross(v2 - v0).normalize();
+                n
+            })
+            .collect::<Vec<_>>();
+
+        let vertices = vertices
+            .into_iter()
+            .enumerate()
+            .map(|(i, pos)| Vertex {
+                pos: pos.to_array(),
+                normal: normals[i / 3].to_array(),
+            })
+            .collect::<Vec<_>>();
+
+        let mut vertices = vec![];
+        // let mut rng = nanorand::wyrand::WyRand::new();
+        // for i in 0..10 * 3 {
+        //     let r = rng.rand();
+        //     let r = r.map(|a| a as f32);
+        //     let mut v = vec3a(r[0], r[1], r[2]);
+        //     v = v / u8::MAX as f32;
+        //     v = v - 0.5;
+        //     v = v * 5.0;
+
+        //     v = v / v.max_element();
+        //     let vertex = Vertex { pos: v.into() };
+
+        //     vertices.push(vertex);
+        // }
 
         let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
             name: "vertex buffer",
             size: (vertices.len() * std::mem::size_of::<Vertex>()) as u64,
             memory: gpu::Memory::Shared,
         });
-
-        let meshes = vec![Mesh {
-            vertex_buf: vertex_buf.into(),
-        }];
-
         unsafe {
             std::ptr::copy_nonoverlapping(
                 vertices.as_ptr(),
@@ -177,19 +230,49 @@ impl State {
                 vertices.len(),
             );
         }
+        let index_buf = ctx.create_buffer(gpu::BufferDesc {
+            name: "index buffer",
+            size: (vertices.len() * std::mem::size_of::<u16>()) as u64,
+            memory: gpu::Memory::Shared,
+        });
+
+        let indices = (0..vertices.len())
+            .into_iter()
+            .map(|a| a as u16)
+            .collect::<Vec<_>>();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                indices.as_ptr(),
+                index_buf.data() as *mut u16,
+                indices.len(),
+            );
+        }
+        let mut meshes = vec![];
+
+        let test_mesh = Mesh {
+            vertex_buf: vertex_buf.into(),
+            num_vertices: vertices.len(),
+            index_buf: Some(index_buf.into()),
+            num_indices: indices.len(),
+        };
+        // meshes.push(test_mesh);
 
         ctx.sync_buffer(vertex_buf);
+        ctx.sync_buffer(index_buf);
 
         dbg!("hi");
 
         let mut command_encoder = ctx.create_command_encoder(gpu::CommandEncoderDesc {
             name: "main",
-            buffer_count: 1,
+            buffer_count: 2,
         });
 
         ctx.destroy_buffer(upload_buffer);
 
-        load_sponza();
+        let sponza_mesh = load_sponza();
+
+        let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
+        meshes.push(gpu_sponza);
 
         Self {
             pipeline,
@@ -219,25 +302,38 @@ impl State {
         ) {
             let mut rc = pass.with(&self.pipeline);
 
-            // let vp = glam::Mat4::perspective_rh(, , , )
-
-            let p = Vec4::ONE;
             let vp = self.camera.vp();
 
             rc.bind(
                 0,
-                &Globals {
-                    mvp_transform: vp.to_cols_array_2d(),
+                &Params {
+                    globals: Globals {
+                        mvp_transform: vp.to_cols_array_2d(),
+                    },
                 },
             );
 
-            let q = vp * p;
+            // let q = vp * p;
+            // let q = q.xyz() / q.w;
+
+            // dbg!(q);
 
             for mesh in self.meshes.iter() {
+                rc.bind_vertex(0, mesh.vertex_buf);
+                if let Some(index_buf) = mesh.index_buf {
+                    rc.draw_indexed(
+                        index_buf,
+                        gpu::IndexType::U16,
+                        mesh.num_indices as _,
+                        0,
+                        0,
+                        1,
+                    );
+                } else {
+                    rc.draw(0, mesh.num_vertices as _, 0, 1);
+                }
                 // rc.bind(1, )
                 // rc.bind(0, )
-                rc.bind_vertex(0, mesh.vertex_buf);
-                rc.draw(0, 3, 0, 1);
             }
         }
         self.command_encoder.present(frame);
@@ -255,11 +351,14 @@ impl Camera {
     // }
 
     pub fn view(&self) -> glam::Mat4 {
-        let rot_x = Quat::from_axis_angle(Vec3::X, self.y_angle.to_radians());
-        let rot_z = Quat::from_axis_angle(Vec3::Z, self.x_angle);
-        let rot = rot_z * rot_x;
-        let proj = Mat4::from_scale_rotation_translation(Vec3A::ONE.into(), rot, self.pos.into());
-        proj.inverse()
+        let rot_x = Quat::from_axis_angle(Vec3::X, self.pitch.to_radians());
+        let rot_y = Quat::from_axis_angle(Vec3::Y, self.yaw);
+        let rot = rot_y * rot_x;
+
+        let pos = Vec3::from_array(self.pos.to_array());
+        let pos = Vec3::from_array(self.pos.to_array());
+        let view = Mat4::from_scale_rotation_translation(Vec3A::ONE.into(), rot, -pos);
+        view
     }
 
     pub fn projection(&self) -> glam::Mat4 {
@@ -269,32 +368,91 @@ impl Camera {
     pub fn default_from_aspect(aspect: f32) -> Self {
         Self {
             pos: Vec3A::ZERO,
-            x_angle: 0.0,
-            y_angle: 0.0,
+            yaw: 0.0,
+            pitch: 0.0,
             fov_rad: TAU / 4.0,
             aspect,
         }
     }
 
     pub fn vp(&self) -> glam::Mat4 {
-        self.projection() * self.view()
+        let v = self.view();
+        let p = self.projection();
+        // dbg!(v);
+        p * v
     }
 }
-pub fn load_sponza() {
+pub fn load_sponza() -> CpuMesh {
     dbg!("loading sponza");
     let path = std::path::Path::new("src/assets/sponza/sponza.obj");
-    parse_obj_file(path);
-    // if let Ok(s) = std::fs::read_to_string() {
-    // } else {
-    //     parse_obj_file()
-    //     dbg!("could not find sponza obj");
-    // }
+    parse_obj_file(path)
 }
 
-pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) {
+pub fn upload_mesh(ctx: &gpu::Context, mesh: CpuMesh) -> Mesh {
+    let CpuMesh { vertices, indices } = mesh;
+
+    let normals = vertices
+        .chunks(3)
+        .map(|c| {
+            let v0 = c[0];
+            let v1 = c[1];
+            let v2 = c[2];
+            let n = (v1 - v0).cross(v2 - v0).normalize();
+            n
+        })
+        .collect::<Vec<_>>();
+    let gpu_vertices = vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| Vertex {
+            pos: v.to_array(),
+            normal: normals[i / 3].to_array(),
+        })
+        .collect::<Vec<_>>();
+    let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
+        name: "vertex buffer",
+        size: (vertices.len() * std::mem::size_of::<Vertex>()) as u64,
+        memory: gpu::Memory::Shared,
+    });
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            gpu_vertices.as_ptr(),
+            vertex_buf.data() as *mut Vertex,
+            vertices.len(),
+        );
+    }
+    let indices = indices.iter().map(|idx| *idx as u64).collect::<Vec<_>>();
+    let index_buf = ctx.create_buffer(gpu::BufferDesc {
+        name: "index buffer",
+        size: (indices.len() * std::mem::size_of::<u64>()) as u64,
+        memory: gpu::Memory::Shared,
+    });
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            indices.as_ptr(),
+            index_buf.data() as *mut u64,
+            indices.len(),
+        );
+    }
+
+    let mesh = Mesh {
+        vertex_buf: vertex_buf.into(),
+        index_buf: Some(index_buf.into()),
+        num_vertices: vertices.len(),
+        num_indices: indices.len(),
+    };
+
+    ctx.sync_buffer(vertex_buf);
+    ctx.sync_buffer(index_buf);
+
+    mesh
+}
+
+pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) -> CpuMesh {
     let mut vertices = vec![];
     let mut normals = vec![];
-    let mut index_buffer = vec![];
+    let mut indices = vec![];
     // pub fn parse_obj_file<R: std::io::BufRead>(file: R) {
     if let Ok(file) = std::fs::File::open(path) {
         let mut reader = std::io::BufReader::new(file);
@@ -322,27 +480,27 @@ pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) {
                     }
                     "f" => {
                         let vals = rest.split(" ");
-                        let mut indices = vec![];
+                        let mut these_indices = vec![];
                         for val in vals {
                             if let Some((v_idx, uv_idx)) = val.split_once("/") {
-                                if let Ok(v_idx) = v_idx.parse::<u32>() {
-                                    indices.push(v_idx);
+                                if let Ok(v_idx) = v_idx.parse::<usize>() {
+                                    these_indices.push(v_idx);
                                 }
                             }
                         }
-                        let n = indices.len();
+                        let n = these_indices.len();
                         match n {
                             3 => {
-                                index_buffer.extend(indices);
+                                indices.extend(these_indices);
                             }
                             4 => {
-                                index_buffer.push(indices[0]);
-                                index_buffer.push(indices[1]);
-                                index_buffer.push(indices[2]);
+                                indices.push(these_indices[0]);
+                                indices.push(these_indices[1]);
+                                indices.push(these_indices[2]);
 
-                                index_buffer.push(indices[2]);
-                                index_buffer.push(indices[3]);
-                                index_buffer.push(indices[0]);
+                                indices.push(these_indices[2]);
+                                indices.push(these_indices[3]);
+                                indices.push(these_indices[0]);
                             }
                             _ => {
                                 dbg!(format!("weird idx len {n}"));
@@ -363,6 +521,9 @@ pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) {
 
     dbg!(vertices.len());
     dbg!(normals.len());
+    dbg!(indices.len());
+
+    CpuMesh { vertices, indices }
 }
 
 fn main() {
@@ -399,6 +560,8 @@ fn main() {
                         target.exit();
                     }
                     winit::event::WindowEvent::RedrawRequested => {
+                        // state.camera.pos -= 0.0001 * Vec3A::Z;
+                        state.camera.yaw += 0.0001;
                         state.render();
                     }
                     _ => {}
