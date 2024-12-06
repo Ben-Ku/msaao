@@ -31,11 +31,12 @@ fn vs_main(vertex: Vertex) -> VertexOutput {
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
-    var light_dir = vec3(1.0,2.0,3.0);
-    light_dir = normalize(light_dir);
+    // var light_dir = vec3(1.0,2.0,3.0);
+    let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
+    // light_dir = normalize(light_dir);
 
-    // let d = max(dot(vertex.normal, light_dir), 0.0);
-    let d = abs(dot(vertex.normal, light_dir));
+    let ndotl = max(dot(vertex.normal, -sun_dir), 0.0);
+    // let d = abs(dot(vertex.normal, sun_dir));
     // let d = vertex.normal.x;
     // return vec4(d,d,d,1.0);
     // return vec4(1.0,0.0,0.0,1.0);
@@ -43,5 +44,12 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // let depth = vertex.clip_pos.z / vertex.clip_pos.w / 50.0; 
     // return vec4(depth,0.0,0.0,1.0);
     // return vec4(d,0.0,0.0,1.0);
-    return vec4(vec3(d),1.0);
+
+    let ambient = 0.2;
+
+    var c = vec3(0.0);
+    c += ndotl;
+    c += ambient;
+
+    return vec4(c,1.0);
 }

@@ -57,6 +57,13 @@ pub struct State {
     pub prev_sync_point: Option<gpu::SyncPoint>,
     pub meshes: Vec<Mesh>,
     pub camera: Camera,
+    pub retained_input: RetainedInput,
+    pub vertices: Vec<Vertex>,
+}
+
+#[derive(Default)]
+pub struct RetainedInput {
+    pub held_keys: std::collections::HashSet<winit::keyboard::KeyCode>,
 }
 
 impl State {
@@ -302,6 +309,8 @@ impl State {
 
         let sponza_vertices = load_sponza();
         // let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
+        let a = sponza_vertices.len() / 3;
+        dbg!(a);
         let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
         meshes.clear();
         meshes.push(gpu_sponza);
@@ -315,6 +324,8 @@ impl State {
             meshes,
             camera: Camera::default_from_aspect(aspect),
             depth_view,
+            retained_input: Default::default(),
+            vertices,
         }
     }
 
@@ -387,45 +398,48 @@ impl State {
         }
         self.prev_sync_point = Some(sync_point);
     }
-    pub fn handle_key_event(&mut self, key: winit::keyboard::KeyCode) {
+    pub fn handle_input(&mut self) {
         let [r, f, u] = self.camera.right_forward_up();
 
-        let speed = 0.1;
-        let angle_speed = 0.1;
-        match key {
-            winit::keyboard::KeyCode::KeyW => {
-                self.camera.pos += f * speed;
-            }
-            winit::keyboard::KeyCode::KeyA => {
-                self.camera.pos -= r * speed;
-            }
-            winit::keyboard::KeyCode::KeyS => {
-                self.camera.pos -= f * speed;
-            }
-            winit::keyboard::KeyCode::KeyD => {
-                self.camera.pos += r * speed;
-            }
-            winit::keyboard::KeyCode::KeyQ => {
-                self.camera.pos -= u * speed;
-            }
-            winit::keyboard::KeyCode::KeyE => {
-                self.camera.pos += u * speed;
-            }
+        let speed = 0.01;
+        let angle_speed = 0.003;
 
-            // angle
-            winit::keyboard::KeyCode::KeyI => {
-                self.camera.pitch += angle_speed;
+        for key in self.retained_input.held_keys.iter() {
+            match key {
+                winit::keyboard::KeyCode::KeyW => {
+                    self.camera.pos += f * speed;
+                }
+                winit::keyboard::KeyCode::KeyA => {
+                    self.camera.pos -= r * speed;
+                }
+                winit::keyboard::KeyCode::KeyS => {
+                    self.camera.pos -= f * speed;
+                }
+                winit::keyboard::KeyCode::KeyD => {
+                    self.camera.pos += r * speed;
+                }
+                winit::keyboard::KeyCode::KeyQ => {
+                    self.camera.pos -= u * speed;
+                }
+                winit::keyboard::KeyCode::KeyE => {
+                    self.camera.pos += u * speed;
+                }
+
+                // angle
+                winit::keyboard::KeyCode::KeyI => {
+                    self.camera.pitch += angle_speed;
+                }
+                winit::keyboard::KeyCode::KeyJ => {
+                    self.camera.yaw += angle_speed;
+                }
+                winit::keyboard::KeyCode::KeyK => {
+                    self.camera.pitch -= angle_speed;
+                }
+                winit::keyboard::KeyCode::KeyL => {
+                    self.camera.yaw -= angle_speed;
+                }
+                _ => {}
             }
-            winit::keyboard::KeyCode::KeyJ => {
-                self.camera.yaw -= angle_speed;
-            }
-            winit::keyboard::KeyCode::KeyK => {
-                self.camera.pitch -= angle_speed;
-            }
-            winit::keyboard::KeyCode::KeyL => {
-                self.camera.yaw += angle_speed;
-            }
-            _ => {}
         }
     }
 }
@@ -436,13 +450,13 @@ impl Camera {
     // }
 
     pub fn view(&self) -> glam::Mat4 {
-        let rot_x = Quat::from_axis_angle(Vec3::X, self.pitch.to_radians());
+        let rot_x = Quat::from_axis_angle(Vec3::X, self.pitch);
         let rot_y = Quat::from_axis_angle(Vec3::Y, self.yaw);
         let rot = rot_y * rot_x;
 
         let pos = Vec3::from_array(self.pos.to_array());
         let pos = Vec3::from_array(self.pos.to_array());
-        let view = Mat4::from_scale_rotation_translation(Vec3A::ONE.into(), rot, -pos);
+        let view = Mat4::from_scale_rotation_translation(Vec3A::ONE.into(), rot, pos).inverse();
         view
     }
 
@@ -469,7 +483,7 @@ impl Camera {
 
     pub fn right_forward_up(&self) -> [Vec3A; 3] {
         let v = self.view();
-        let rot = v.to_scale_rotation_translation().1;
+        let rot = v.to_scale_rotation_translation().1.inverse();
 
         let r = rot * Vec3A::X;
         let f = rot * -Vec3A::Z;
@@ -486,6 +500,8 @@ pub fn load_sponza() -> Vec<Vertex> {
 
     vertices
 }
+
+// pub fn load_
 
 pub fn turn_mesh_into_pure_vertex_list(mesh: CpuMesh) -> Vec<Vertex> {
     let mut vertices = vec![];
@@ -698,13 +714,18 @@ fn main() {
                         event:
                             winit::event::KeyEvent {
                                 physical_key: winit::keyboard::PhysicalKey::Code(key_code),
-                                state: winit::event::ElementState::Pressed,
+                                state: key_state,
                                 ..
                             },
                         ..
-                    } => {
-                        state.handle_key_event(key_code);
-                    }
+                    } => match key_state {
+                        winit::event::ElementState::Pressed => {
+                            state.retained_input.held_keys.insert(key_code);
+                        }
+                        winit::event::ElementState::Released => {
+                            state.retained_input.held_keys.remove(&key_code);
+                        }
+                    },
                     winit::event::WindowEvent::CloseRequested => {
                         dbg!("closing");
                         target.exit();
@@ -716,6 +737,7 @@ fn main() {
                         let [r, f, u] = state.camera.right_forward_up();
                         // state.camera.yaw = TAU / 4.0;
                         // state.camera.pos += 0.001 * f;
+                        state.handle_input();
                         state.render();
                     }
                     _ => {}
