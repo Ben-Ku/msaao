@@ -7,7 +7,7 @@ var<uniform> globals: Globals;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    normal: vec3<f32>
+    // normal: vec3<f32>
 };
 
 struct Vertex {
@@ -20,9 +20,11 @@ fn vs_main(vertex: Vertex) -> VertexOutput {
     var pos = vec4(vertex.pos, 1.0);
 
     pos = globals.mvp_transform * pos;
+
     // return VertexOutput(pos);
     // let vs_out = VertexOutput(pos, vertex.normal);
-    let vs_out = VertexOutput(pos, vec3(1.0));
+    // let vs_out = VertexOutput(pos, vec3(1.0));
+    let vs_out = VertexOutput(pos);
     return vs_out;
 }
 

@@ -186,7 +186,7 @@ impl State {
             })
             .collect::<Vec<_>>();
 
-        let vertices = vertices
+        let mut vertices = vertices
             .into_iter()
             .enumerate()
             .map(|(i, pos)| Vertex {
@@ -195,23 +195,25 @@ impl State {
             })
             .collect::<Vec<_>>();
 
-        let mut vertices = vec![];
-        let mut rng = nanorand::wyrand::WyRand::new();
-        for i in 0..10 * 3 {
-            let r = rng.rand();
-            let r = r.map(|a| a as f32 / u8::MAX as f32);
-            let mut v = vec3a(r[0], r[1], r[2]);
-            v = v;
-            v = v - 0.5;
-            v = v * 5.0;
+        if false {
+            vertices.clear();
+            let mut rng = nanorand::wyrand::WyRand::new();
+            for i in 0..10 * 3 {
+                let r = rng.rand();
+                let r = r.map(|a| a as f32 / u8::MAX as f32);
+                let mut v = vec3a(r[0], r[1], r[2]);
+                v = v;
+                v = v - 0.5;
+                v = v * 5.0;
 
-            v = v / v.max_element();
-            let vertex = Vertex {
-                pos: v.into(),
-                normal: [r[3], 0.0, 0.0],
-            };
+                v = v / v.max_element();
+                let vertex = Vertex {
+                    pos: v.into(),
+                    normal: [r[3], 0.0, 0.0],
+                };
 
-            vertices.push(vertex);
+                vertices.push(vertex);
+            }
         }
 
         let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
@@ -226,20 +228,21 @@ impl State {
                 vertices.len(),
             );
         }
-        let index_buf = ctx.create_buffer(gpu::BufferDesc {
-            name: "index buffer",
-            size: (vertices.len() * std::mem::size_of::<u16>()) as u64,
-            memory: gpu::Memory::Shared,
-        });
 
         let indices = (0..vertices.len())
             .into_iter()
-            .map(|a| a as u16)
+            .map(|a| a as u32)
             .collect::<Vec<_>>();
+        let index_buf = ctx.create_buffer(gpu::BufferDesc {
+            name: "index buffer",
+            size: (indices.len() * std::mem::size_of::<u32>()) as u64,
+            memory: gpu::Memory::Shared,
+        });
+
         unsafe {
             std::ptr::copy_nonoverlapping(
                 indices.as_ptr(),
-                index_buf.data() as *mut u16,
+                index_buf.data() as *mut u32,
                 indices.len(),
             );
         }
@@ -263,9 +266,10 @@ impl State {
 
         // ctx.destroy_buffer(upload_buffer);
 
-        // let sponza_mesh = load_sponza();
-        // let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
-        // meshes.push(gpu_sponza);
+        let sponza_mesh = load_sponza();
+        let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
+        meshes.clear();
+        meshes.push(gpu_sponza);
 
         Self {
             pipeline,
@@ -313,11 +317,11 @@ impl State {
 
             for mesh in self.meshes.iter() {
                 rc.bind_vertex(0, mesh.vertex_buf);
-                if false {
+                if true {
                     if let Some(index_buf) = mesh.index_buf {
                         rc.draw_indexed(
                             index_buf,
-                            gpu::IndexType::U16,
+                            gpu::IndexType::U32,
                             mesh.num_indices as _,
                             0,
                             0,
@@ -420,17 +424,17 @@ pub fn upload_mesh(ctx: &gpu::Context, mesh: CpuMesh) -> Mesh {
             vertices.len(),
         );
     }
-    let indices = indices.iter().map(|idx| *idx as u64).collect::<Vec<_>>();
+    let indices = indices.iter().map(|idx| *idx as u32).collect::<Vec<_>>();
     let index_buf = ctx.create_buffer(gpu::BufferDesc {
         name: "index buffer",
-        size: (indices.len() * std::mem::size_of::<u64>()) as u64,
+        size: (indices.len() * std::mem::size_of::<u32>()) as u64,
         memory: gpu::Memory::Shared,
     });
 
     unsafe {
         std::ptr::copy_nonoverlapping(
             indices.as_ptr(),
-            index_buf.data() as *mut u64,
+            index_buf.data() as *mut u32,
             indices.len(),
         );
     }
