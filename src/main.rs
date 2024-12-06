@@ -1,3 +1,4 @@
+use blade_graphics::DepthBiasState;
 use nanorand::Rng;
 use std::io::BufRead;
 
@@ -52,6 +53,7 @@ pub struct State {
     pub command_encoder: gpu::CommandEncoder,
     pub ctx: gpu::Context,
     pub surface: gpu::Surface,
+    pub depth_view: gpu::TextureView,
     pub prev_sync_point: Option<gpu::SyncPoint>,
     pub meshes: Vec<Mesh>,
     pub camera: Camera,
@@ -89,6 +91,29 @@ impl State {
                 },
             )
             .unwrap();
+        let depth_texture = ctx.create_texture(gpu::TextureDesc {
+            name: "depth",
+            format: gpu::TextureFormat::Depth32Float,
+            size: gpu::Extent {
+                width,
+                height,
+                depth: 1,
+            },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET,
+        });
+
+        let depth_view = ctx.create_texture_view(
+            depth_texture,
+            gpu::TextureViewDesc {
+                name: "depth view",
+                format: gpu::TextureFormat::Depth32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
 
         let shader_source = std::fs::read_to_string("src/shader.wgsl").unwrap();
         let shader = ctx.create_shader(gpu::ShaderDesc {
@@ -105,9 +130,18 @@ impl State {
             }],
             primitive: gpu::PrimitiveState {
                 topology: gpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
+                front_face: gpu::FrontFace::Ccw,
+                cull_mode: Some(gpu::Face::Back),
+                unclipped_depth: false,
+                wireframe: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(gpu::DepthStencilState {
+                format: gpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: gpu::CompareFunction::Less,
+                stencil: Default::default(),
+                bias: gpu::DepthBiasState::default(),
+            }),
             fragment: shader.at("fs_main"),
             color_targets: &[gpu::ColorTargetState {
                 format: surface.info().format,
@@ -116,30 +150,30 @@ impl State {
             }],
         });
 
-        let extent = gpu::Extent {
-            width: 1,
-            height: 1,
-            depth: 1,
-        };
-        let texture = ctx.create_texture(gpu::TextureDesc {
-            name: "texture",
-            format: gpu::TextureFormat::Rgba8Unorm,
-            size: extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            dimension: gpu::TextureDimension::D2,
-            usage: gpu::TextureUsage::RESOURCE | gpu::TextureUsage::COPY,
-        });
+        // let extent = gpu::Extent {
+        //     width: 1,
+        //     height: 1,
+        //     depth: 1,
+        // };
+        // let texture = ctx.create_texture(gpu::TextureDesc {
+        //     name: "texture",
+        //     format: gpu::TextureFormat::Rgba8Unorm,
+        //     size: extent,
+        //     array_layer_count: 1,
+        //     mip_level_count: 1,
+        //     dimension: gpu::TextureDimension::D2,
+        //     usage: gpu::TextureUsage::RESOURCE | gpu::TextureUsage::COPY,
+        // });
 
-        let view = ctx.create_texture_view(
-            texture,
-            gpu::TextureViewDesc {
-                name: "view",
-                format: gpu::TextureFormat::Rgba8Unorm,
-                dimension: gpu::ViewDimension::D2,
-                subresources: &Default::default(),
-            },
-        );
+        // let view = ctx.create_texture_view(
+        //     texture,
+        //     gpu::TextureViewDesc {
+        //         name: "view",
+        //         format: gpu::TextureFormat::Rgba8Unorm,
+        //         dimension: gpu::ViewDimension::D2,
+        //         subresources: &Default::default(),
+        //     },
+        // );
 
         // let upload_buffer = ctx.create_buffer(gpu::BufferDesc {
         //     name: "staging",
@@ -280,6 +314,7 @@ impl State {
             prev_sync_point: None,
             meshes,
             camera: Camera::default_from_aspect(aspect),
+            depth_view,
         }
     }
 
@@ -295,7 +330,16 @@ impl State {
                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                     finish_op: gpu::FinishOp::Store,
                 }],
-                depth_stencil: None,
+                depth_stencil: Some(gpu::RenderTarget {
+                    view: self.depth_view,
+                    init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+                    finish_op: gpu::FinishOp::Discard,
+                }),
+                // depth_stencil: Some(gpu::RenderTarget {
+                //     view: self.depth_view,
+                //     init_op: gpu::InitOp::Clear(gpu::TextureColor::OpaqueBlack),
+                //     finish_op: gpu::FinishOp::Discard,
+                // }),
             },
         ) {
             let mut rc = pass.with(&self.pipeline);
