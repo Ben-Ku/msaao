@@ -13,11 +13,16 @@ pub const TAU: f32 = 2.0 * PI;
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct Globals {
     mvp_transform: [[f32; 4]; 4],
+    cam_pos: [f32; 3],
+    cam_dir: [f32; 3],
+    pad: [u32; 2],
 }
 
 #[derive(blade_macros::ShaderData)]
 pub struct Params {
     pub globals: Globals,
+    pub depth_view: gpu::TextureView,
+    pub depth_sampler: gpu::Sampler,
 }
 
 #[derive(blade_macros::Vertex, Debug)]
@@ -54,6 +59,7 @@ pub struct State {
     pub ctx: gpu::Context,
     pub surface: gpu::Surface,
     pub depth_view: gpu::TextureView,
+    pub depth_sampler: gpu::Sampler,
     pub prev_sync_point: Option<gpu::SyncPoint>,
     pub meshes: Vec<Mesh>,
     pub camera: Camera,
@@ -109,7 +115,7 @@ impl State {
             array_layer_count: 1,
             mip_level_count: 1,
             dimension: gpu::TextureDimension::D2,
-            usage: gpu::TextureUsage::TARGET,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
         });
 
         let depth_view = ctx.create_texture_view(
@@ -121,6 +127,12 @@ impl State {
                 subresources: &Default::default(),
             },
         );
+
+        let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
+            name: "depth sampler",
+            compare: Some(gpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
 
         let shader_source = std::fs::read_to_string("src/shader.wgsl").unwrap();
         let shader = ctx.create_shader(gpu::ShaderDesc {
@@ -326,6 +338,7 @@ impl State {
             depth_view,
             retained_input: Default::default(),
             vertices,
+            depth_sampler,
         }
     }
 
@@ -346,23 +359,21 @@ impl State {
                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                     finish_op: gpu::FinishOp::Discard,
                 }),
-                // depth_stencil: Some(gpu::RenderTarget {
-                //     view: self.depth_view,
-                //     init_op: gpu::InitOp::Clear(gpu::TextureColor::OpaqueBlack),
-                //     finish_op: gpu::FinishOp::Discard,
-                // }),
             },
         ) {
             let mut rc = pass.with(&self.pipeline);
-
-            let vp = self.camera.vp();
 
             rc.bind(
                 0,
                 &Params {
                     globals: Globals {
-                        mvp_transform: vp.to_cols_array_2d(),
+                        mvp_transform: self.camera.vp().to_cols_array_2d(),
+                        cam_pos: self.camera.pos.to_array(),
+                        cam_dir: self.camera.right_forward_up()[1].to_array(),
+                        pad: [0; 2],
                     },
+                    depth_view: self.depth_view,
+                    depth_sampler: self.depth_sampler,
                 },
             );
 
