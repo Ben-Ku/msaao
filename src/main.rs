@@ -266,8 +266,9 @@ impl State {
 
         // ctx.destroy_buffer(upload_buffer);
 
-        let sponza_mesh = load_sponza();
-        let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
+        let sponza_vertices = load_sponza();
+        // let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
+        let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
         meshes.clear();
         meshes.push(gpu_sponza);
 
@@ -317,7 +318,7 @@ impl State {
 
             for mesh in self.meshes.iter() {
                 rc.bind_vertex(0, mesh.vertex_buf);
-                if true {
+                if false {
                     if let Some(index_buf) = mesh.index_buf {
                         rc.draw_indexed(
                             index_buf,
@@ -381,10 +382,62 @@ impl Camera {
         p * v
     }
 }
-pub fn load_sponza() -> CpuMesh {
+pub fn load_sponza() -> Vec<Vertex> {
     dbg!("loading sponza");
     let path = std::path::Path::new("src/assets/sponza/sponza.obj");
-    parse_obj_file(path)
+    let mesh = parse_obj_file(path);
+    let vertices = turn_mesh_into_pure_vertex_list(mesh);
+
+    vertices
+}
+
+pub fn turn_mesh_into_pure_vertex_list(mesh: CpuMesh) -> Vec<Vertex> {
+    let mut vertices = vec![];
+
+    for idxs in mesh.indices.chunks_exact(3) {
+        let i0 = idxs[0];
+        let i1 = idxs[1];
+        let i2 = idxs[2];
+
+        let v0 = mesh.vertices[i0];
+        let v1 = mesh.vertices[i1];
+        let v2 = mesh.vertices[i2];
+        let n = (v1 - v0).cross(v2 - v0).normalize();
+
+        for pos in [v0, v1, v2] {
+            let new_vertex = Vertex {
+                pos: pos.to_array(),
+                normal: n.to_array(),
+            };
+            vertices.push(new_vertex);
+        }
+    }
+
+    vertices
+}
+
+pub fn upload_vertices(vertices: Vec<Vertex>, ctx: &gpu::Context) -> Mesh {
+    let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
+        name: "vertex buffer",
+        size: (vertices.len() * std::mem::size_of::<Vertex>()) as u64,
+        memory: gpu::Memory::Shared,
+    });
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            vertices.as_ptr(),
+            vertex_buf.data() as *mut Vertex,
+            vertices.len(),
+        );
+    }
+    let mesh = Mesh {
+        vertex_buf: vertex_buf.into(),
+        index_buf: None,
+        num_vertices: vertices.len(),
+        num_indices: 0,
+    };
+
+    ctx.sync_buffer(vertex_buf);
+    mesh
 }
 
 pub fn upload_mesh(ctx: &gpu::Context, mesh: CpuMesh) -> Mesh {
