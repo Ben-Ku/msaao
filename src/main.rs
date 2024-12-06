@@ -141,22 +141,22 @@ impl State {
             },
         );
 
-        let upload_buffer = ctx.create_buffer(gpu::BufferDesc {
-            name: "staging",
-            size: (extent.width * extent.height) as u64 * 4,
-            memory: gpu::Memory::Upload,
-        });
+        // let upload_buffer = ctx.create_buffer(gpu::BufferDesc {
+        //     name: "staging",
+        //     size: (extent.width * extent.height) as u64 * 4,
+        //     memory: gpu::Memory::Upload,
+        // });
 
-        let texture_data = [0xFFu8; 4];
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                texture_data.as_ptr(),
-                upload_buffer.data(),
-                texture_data.len(),
-            );
-        }
+        // let texture_data = [0xFFu8; 4];
+        // unsafe {
+        //     std::ptr::copy_nonoverlapping(
+        //         texture_data.as_ptr(),
+        //         upload_buffer.data(),
+        //         texture_data.len(),
+        //     );
+        // }
 
-        ctx.sync_buffer(upload_buffer);
+        // ctx.sync_buffer(upload_buffer);
 
         let sampler = ctx.create_sampler(gpu::SamplerDesc {
             name: "main",
@@ -164,20 +164,13 @@ impl State {
         });
 
         let mut vertices = [
-            vec3a(0.2, 0.2, -1.0),
-            vec3a(0.8, 0.2, -1.0),
-            vec3a(0.5, 0.8, -1.0),
-            vec3a(-0.2, -0.2, -1.0),
-            vec3a(-0.8, -0.2, -1.0),
-            vec3a(-0.5, -0.8, -1.0),
+            vec3a(0.2, 0.2, 1.0),
+            vec3a(0.8, 0.2, 1.0),
+            vec3a(0.5, 0.8, 1.0),
+            vec3a(-0.2, -0.2, 1.0),
+            vec3a(-0.8, -0.2, 1.0),
+            vec3a(-0.5, -0.8, 1.0),
         ];
-
-        let mut v = vertices.clone();
-        v = v.map(|v| {
-            let mut a = -v;
-            a.z = -a.z;
-            a
-        });
 
         // let mut vertices = vertices.to_vec();
         // vertices.extend(v);
@@ -203,20 +196,23 @@ impl State {
             .collect::<Vec<_>>();
 
         let mut vertices = vec![];
-        // let mut rng = nanorand::wyrand::WyRand::new();
-        // for i in 0..10 * 3 {
-        //     let r = rng.rand();
-        //     let r = r.map(|a| a as f32);
-        //     let mut v = vec3a(r[0], r[1], r[2]);
-        //     v = v / u8::MAX as f32;
-        //     v = v - 0.5;
-        //     v = v * 5.0;
+        let mut rng = nanorand::wyrand::WyRand::new();
+        for i in 0..10 * 3 {
+            let r = rng.rand();
+            let r = r.map(|a| a as f32 / u8::MAX as f32);
+            let mut v = vec3a(r[0], r[1], r[2]);
+            v = v;
+            v = v - 0.5;
+            v = v * 5.0;
 
-        //     v = v / v.max_element();
-        //     let vertex = Vertex { pos: v.into() };
+            v = v / v.max_element();
+            let vertex = Vertex {
+                pos: v.into(),
+                normal: [r[3], 0.0, 0.0],
+            };
 
-        //     vertices.push(vertex);
-        // }
+            vertices.push(vertex);
+        }
 
         let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
             name: "vertex buffer",
@@ -255,24 +251,21 @@ impl State {
             index_buf: Some(index_buf.into()),
             num_indices: indices.len(),
         };
-        // meshes.push(test_mesh);
+        meshes.push(test_mesh);
 
         ctx.sync_buffer(vertex_buf);
         ctx.sync_buffer(index_buf);
-
-        dbg!("hi");
 
         let mut command_encoder = ctx.create_command_encoder(gpu::CommandEncoderDesc {
             name: "main",
             buffer_count: 2,
         });
 
-        ctx.destroy_buffer(upload_buffer);
+        // ctx.destroy_buffer(upload_buffer);
 
-        let sponza_mesh = load_sponza();
-
-        let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
-        meshes.push(gpu_sponza);
+        // let sponza_mesh = load_sponza();
+        // let gpu_sponza = upload_mesh(&ctx, sponza_mesh);
+        // meshes.push(gpu_sponza);
 
         Self {
             pipeline,
@@ -320,15 +313,17 @@ impl State {
 
             for mesh in self.meshes.iter() {
                 rc.bind_vertex(0, mesh.vertex_buf);
-                if let Some(index_buf) = mesh.index_buf {
-                    rc.draw_indexed(
-                        index_buf,
-                        gpu::IndexType::U16,
-                        mesh.num_indices as _,
-                        0,
-                        0,
-                        1,
-                    );
+                if false {
+                    if let Some(index_buf) = mesh.index_buf {
+                        rc.draw_indexed(
+                            index_buf,
+                            gpu::IndexType::U16,
+                            mesh.num_indices as _,
+                            0,
+                            0,
+                            1,
+                        );
+                    }
                 } else {
                     rc.draw(0, mesh.num_vertices as _, 0, 1);
                 }
@@ -391,12 +386,16 @@ pub fn load_sponza() -> CpuMesh {
 pub fn upload_mesh(ctx: &gpu::Context, mesh: CpuMesh) -> Mesh {
     let CpuMesh { vertices, indices } = mesh;
 
-    let normals = vertices
+    let normals = indices
         .chunks(3)
-        .map(|c| {
-            let v0 = c[0];
-            let v1 = c[1];
-            let v2 = c[2];
+        .map(|idxs| {
+            let i0 = idxs[0];
+            let i1 = idxs[1];
+            let i2 = idxs[2];
+
+            let v0 = vertices[i0];
+            let v1 = vertices[i1];
+            let v2 = vertices[i2];
             let n = (v1 - v0).cross(v2 - v0).normalize();
             n
         })
@@ -484,7 +483,8 @@ pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) -> CpuMesh {
                         for val in vals {
                             if let Some((v_idx, uv_idx)) = val.split_once("/") {
                                 if let Ok(v_idx) = v_idx.parse::<usize>() {
-                                    these_indices.push(v_idx);
+                                    // NOTE: obj uses 1-based indices
+                                    these_indices.push(v_idx - 1);
                                 }
                             }
                         }
