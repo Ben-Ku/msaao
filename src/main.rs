@@ -362,7 +362,7 @@ impl Camera {
     }
 
     pub fn projection(&self) -> glam::Mat4 {
-        glam::Mat4::perspective_rh(self.fov_rad, self.aspect, 0.1, 100.0)
+        glam::Mat4::perspective_rh(self.fov_rad, self.aspect, 0.001, 100.0)
     }
 
     pub fn default_from_aspect(aspect: f32) -> Self {
@@ -618,7 +618,9 @@ fn main() {
                     }
                     winit::event::WindowEvent::RedrawRequested => {
                         // state.camera.pos -= 0.0001 * Vec3A::Z;
-                        state.camera.yaw += 0.0001;
+                        // state.camera.yaw += 0.0001;
+                        state.camera.yaw = TAU / 4.0;
+                        state.camera.pos += Vec3A::Y * 0.001;
                         state.render();
                     }
                     _ => {}
