@@ -387,6 +387,47 @@ impl State {
         }
         self.prev_sync_point = Some(sync_point);
     }
+    pub fn handle_key_event(&mut self, key: winit::keyboard::KeyCode) {
+        let [r, f, u] = self.camera.right_forward_up();
+
+        let speed = 0.1;
+        let angle_speed = 0.1;
+        match key {
+            winit::keyboard::KeyCode::KeyW => {
+                self.camera.pos += f * speed;
+            }
+            winit::keyboard::KeyCode::KeyA => {
+                self.camera.pos -= r * speed;
+            }
+            winit::keyboard::KeyCode::KeyS => {
+                self.camera.pos -= f * speed;
+            }
+            winit::keyboard::KeyCode::KeyD => {
+                self.camera.pos += r * speed;
+            }
+            winit::keyboard::KeyCode::KeyQ => {
+                self.camera.pos -= u * speed;
+            }
+            winit::keyboard::KeyCode::KeyE => {
+                self.camera.pos += u * speed;
+            }
+
+            // angle
+            winit::keyboard::KeyCode::KeyI => {
+                self.camera.pitch += angle_speed;
+            }
+            winit::keyboard::KeyCode::KeyJ => {
+                self.camera.yaw -= angle_speed;
+            }
+            winit::keyboard::KeyCode::KeyK => {
+                self.camera.pitch -= angle_speed;
+            }
+            winit::keyboard::KeyCode::KeyL => {
+                self.camera.yaw += angle_speed;
+            }
+            _ => {}
+        }
+    }
 }
 
 impl Camera {
@@ -424,6 +465,17 @@ impl Camera {
         let p = self.projection();
         // dbg!(v);
         p * v
+    }
+
+    pub fn right_forward_up(&self) -> [Vec3A; 3] {
+        let v = self.view();
+        let rot = v.to_scale_rotation_translation().1;
+
+        let r = rot * Vec3A::X;
+        let f = rot * -Vec3A::Z;
+        let u = rot * Vec3A::Y;
+
+        [r, f, u]
     }
 }
 pub fn load_sponza() -> Vec<Vertex> {
@@ -650,12 +702,9 @@ fn main() {
                                 ..
                             },
                         ..
-                    } => match key_code {
-                        winit::keyboard::KeyCode::Space => {
-                            dbg!("Hello");
-                        }
-                        _ => {}
-                    },
+                    } => {
+                        state.handle_key_event(key_code);
+                    }
                     winit::event::WindowEvent::CloseRequested => {
                         dbg!("closing");
                         target.exit();
@@ -663,8 +712,10 @@ fn main() {
                     winit::event::WindowEvent::RedrawRequested => {
                         // state.camera.pos -= 0.0001 * Vec3A::Z;
                         // state.camera.yaw += 0.0001;
-                        state.camera.yaw = TAU / 4.0;
-                        state.camera.pos += Vec3A::Y * 0.001;
+
+                        let [r, f, u] = state.camera.right_forward_up();
+                        // state.camera.yaw = TAU / 4.0;
+                        // state.camera.pos += 0.001 * f;
                         state.render();
                     }
                     _ => {}
