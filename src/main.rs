@@ -1,6 +1,6 @@
-use blade_graphics::DepthBiasState;
-use nanorand::Rng;
 use std::io::BufRead;
+
+use nanorand::Rng;
 
 pub use blade_graphics as gpu;
 use bytemuck::{Pod, Zeroable};
@@ -51,20 +51,174 @@ pub struct Camera {
     pub aspect: f32,
 }
 
-pub struct Cube {}
+pub struct GBuffer {
+    pub depth_view: gpu::TextureView,
+    pub pos_view: gpu::TextureView,
+    pub normal_view: gpu::TextureView,
+    pub depth_sampler: gpu::Sampler,
+    pub pos_sampler: gpu::Sampler,
+    pub normal_sampler: gpu::Sampler,
+}
+
+pub struct Pipelines {
+    pub fill_gbuffer: gpu::RenderPipeline,
+    pub deferred: gpu::RenderPipeline,
+}
+
+impl Pipelines {
+    // pub fn new(ctx: &gpu::Context) {
+    //     // let fill_gbuffer =  ctx.create_render_pipeline(
+    //     //     gpu::RenderPipelineDesc {
+    //     //      name: "fill gbuffer",
+    //     //      data_layouts: todo!(),
+    //     //      vertex: todo!(),
+    //     //      vertex_fetches: todo!(),
+    //     //      primitive: todo!(),
+    //     //      depth_stencil: todo!(),
+    //     //      fragment: todo!(),
+    //     //      color_targets: todo!(),
+    //     //  }
+    //     // );
+    //     let pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
+    //         name: "geometry",
+    //         data_layouts: &[&<Params as gpu::ShaderData>::layout()],
+    //         vertex: shader.at("vs_main"),
+    //         vertex_fetches: &[gpu::VertexFetchState {
+    //             layout: &<Vertex as gpu::Vertex>::layout(),
+    //             instanced: false,
+    //         }],
+    //         primitive: gpu::PrimitiveState {
+    //             topology: gpu::PrimitiveTopology::TriangleList,
+    //             front_face: gpu::FrontFace::Ccw,
+    //             cull_mode: Some(gpu::Face::Back),
+    //             unclipped_depth: false,
+    //             wireframe: false,
+    //         },
+    //         depth_stencil: Some(gpu::DepthStencilState {
+    //             format: gpu::TextureFormat::Depth32Float,
+    //             depth_write_enabled: true,
+    //             depth_compare: gpu::CompareFunction::Less,
+    //             stencil: Default::default(),
+    //             bias: gpu::DepthBiasState::default(),
+    //         }),
+    //         fragment: shader.at("fs_main"),
+    //         color_targets: &[gpu::ColorTargetState {
+    //             format: surface.info().format,
+    //             blend: Some(gpu::BlendState::ALPHA_BLENDING),
+    //             write_mask: gpu::ColorWrites::default(),
+    //         }],
+    //     });
+    // }
+}
+
+impl GBuffer {
+    pub fn new(ctx: &gpu::Context, width: u32, height: u32) -> Self {
+        let extent = gpu::Extent {
+            width,
+            height,
+            depth: 1,
+        };
+        let depth_texture = ctx.create_texture(gpu::TextureDesc {
+            name: "depth texture",
+            format: gpu::TextureFormat::Depth32Float,
+            size: extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let depth_view = ctx.create_texture_view(
+            depth_texture,
+            gpu::TextureViewDesc {
+                name: "depth view",
+                format: gpu::TextureFormat::Depth32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
+            name: "depth sampler",
+            compare: Some(gpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+
+        let pos_texture = ctx.create_texture(gpu::TextureDesc {
+            name: "pos texture",
+            format: gpu::TextureFormat::Rgba32Float,
+            size: extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let pos_view = ctx.create_texture_view(
+            pos_texture,
+            gpu::TextureViewDesc {
+                name: "pos view",
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let pos_sampler = ctx.create_sampler(gpu::SamplerDesc {
+            name: "pos sampler",
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let normal_texture = ctx.create_texture(gpu::TextureDesc {
+            name: "normal texture",
+            format: gpu::TextureFormat::Rgba32Float,
+            size: extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let normal_view = ctx.create_texture_view(
+            normal_texture,
+            gpu::TextureViewDesc {
+                name: "normal view",
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let normal_sampler = ctx.create_sampler(gpu::SamplerDesc {
+            name: "normal sampler",
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        GBuffer {
+            depth_view,
+            pos_view,
+            normal_view,
+            depth_sampler,
+            pos_sampler,
+            normal_sampler,
+        }
+    }
+}
 
 pub struct State {
-    pub pipeline: gpu::RenderPipeline,
+    pub geometry_pipeline: gpu::RenderPipeline,
+    pub light_pipeline: gpu::RenderPipeline,
     pub command_encoder: gpu::CommandEncoder,
     pub ctx: gpu::Context,
     pub surface: gpu::Surface,
-    pub depth_view: gpu::TextureView,
-    pub depth_sampler: gpu::Sampler,
     pub prev_sync_point: Option<gpu::SyncPoint>,
     pub meshes: Vec<Mesh>,
     pub camera: Camera,
     pub retained_input: RetainedInput,
-    pub vertices: Vec<Vertex>,
+    pub g_buffer: GBuffer,
+    pub screen_quad_buf: gpu::BufferPiece,
 }
 
 #[derive(Default)]
@@ -104,6 +258,7 @@ impl State {
                 },
             )
             .unwrap();
+
         let depth_texture = ctx.create_texture(gpu::TextureDesc {
             name: "depth",
             format: gpu::TextureFormat::Depth32Float,
@@ -134,15 +289,15 @@ impl State {
             ..Default::default()
         });
 
-        let shader_source = std::fs::read_to_string("src/shader.wgsl").unwrap();
-        let shader = ctx.create_shader(gpu::ShaderDesc {
-            source: &shader_source,
+        let geometry_shader_source = std::fs::read_to_string("src/shader.wgsl").unwrap();
+        let geometry_shader = ctx.create_shader(gpu::ShaderDesc {
+            source: &geometry_shader_source,
         });
 
-        let pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
-            name: "main",
+        let geometry_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
+            name: "geometry",
             data_layouts: &[&<Params as gpu::ShaderData>::layout()],
-            vertex: shader.at("vs_main"),
+            vertex: geometry_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
                 instanced: false,
@@ -161,158 +316,88 @@ impl State {
                 stencil: Default::default(),
                 bias: gpu::DepthBiasState::default(),
             }),
-            fragment: shader.at("fs_main"),
+            fragment: geometry_shader.at("fs_main"),
             color_targets: &[gpu::ColorTargetState {
                 format: surface.info().format,
-                blend: Some(gpu::BlendState::ALPHA_BLENDING),
+                blend: Some(gpu::BlendState::REPLACE),
                 write_mask: gpu::ColorWrites::default(),
             }],
         });
 
-        // let extent = gpu::Extent {
-        //     width: 1,
-        //     height: 1,
-        //     depth: 1,
-        // };
-        // let texture = ctx.create_texture(gpu::TextureDesc {
-        //     name: "texture",
-        //     format: gpu::TextureFormat::Rgba8Unorm,
-        //     size: extent,
-        //     array_layer_count: 1,
-        //     mip_level_count: 1,
-        //     dimension: gpu::TextureDimension::D2,
-        //     usage: gpu::TextureUsage::RESOURCE | gpu::TextureUsage::COPY,
+        let light_shader_source = std::fs::read_to_string("src/light_shader.wgsl").unwrap();
+        let light_shader = ctx.create_shader(gpu::ShaderDesc {
+            source: &light_shader_source,
+        });
+
+        let light_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
+            name: "light",
+            // data_layouts: &[&<Params as gpu::ShaderData>::layout()],
+            data_layouts: &[],
+            vertex: light_shader.at("vs_main"),
+            vertex_fetches: &[gpu::VertexFetchState {
+                layout: &<Vertex as gpu::Vertex>::layout(),
+                instanced: false,
+            }],
+            primitive: gpu::PrimitiveState {
+                topology: gpu::PrimitiveTopology::TriangleList,
+                front_face: gpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                wireframe: false,
+            },
+            depth_stencil: None,
+            fragment: light_shader.at("fs_main"),
+            color_targets: &[gpu::ColorTargetState {
+                format: surface.info().format,
+                blend: Some(gpu::BlendState::REPLACE),
+                write_mask: gpu::ColorWrites::default(),
+            }],
+        });
+
+        // let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
+        //     name: "vertex buffer",
+        //     size: (vertices.len() * std::mem::size_of::<Vertex>()) as u64,
+        //     memory: gpu::Memory::Shared,
         // });
-
-        // let view = ctx.create_texture_view(
-        //     texture,
-        //     gpu::TextureViewDesc {
-        //         name: "view",
-        //         format: gpu::TextureFormat::Rgba8Unorm,
-        //         dimension: gpu::ViewDimension::D2,
-        //         subresources: &Default::default(),
-        //     },
-        // );
-
-        // let upload_buffer = ctx.create_buffer(gpu::BufferDesc {
-        //     name: "staging",
-        //     size: (extent.width * extent.height) as u64 * 4,
-        //     memory: gpu::Memory::Upload,
-        // });
-
-        // let texture_data = [0xFFu8; 4];
         // unsafe {
         //     std::ptr::copy_nonoverlapping(
-        //         texture_data.as_ptr(),
-        //         upload_buffer.data(),
-        //         texture_data.len(),
+        //         vertices.as_ptr(),
+        //         vertex_buf.data() as *mut Vertex,
+        //         vertices.len(),
         //     );
         // }
 
-        // ctx.sync_buffer(upload_buffer);
+        // let indices = (0..vertices.len())
+        //     .into_iter()
+        //     .map(|a| a as u32)
+        //     .collect::<Vec<_>>();
+        // let index_buf = ctx.create_buffer(gpu::BufferDesc {
+        //     name: "index buffer",
+        //     size: (indices.len() * std::mem::size_of::<u32>()) as u64,
+        //     memory: gpu::Memory::Shared,
+        // });
 
-        let sampler = ctx.create_sampler(gpu::SamplerDesc {
-            name: "main",
-            ..Default::default()
-        });
-
-        let mut vertices = [
-            vec3a(0.2, 0.2, 1.0),
-            vec3a(0.8, 0.2, 1.0),
-            vec3a(0.5, 0.8, 1.0),
-            vec3a(-0.2, -0.2, 1.0),
-            vec3a(-0.8, -0.2, 1.0),
-            vec3a(-0.5, -0.8, 1.0),
-        ];
-
-        // let mut vertices = vertices.to_vec();
-        // vertices.extend(v);
-
-        let normals = vertices
-            .chunks(3)
-            .map(|c| {
-                let v0 = c[0];
-                let v1 = c[1];
-                let v2 = c[2];
-                let n = (v1 - v0).cross(v2 - v0).normalize();
-                n
-            })
-            .collect::<Vec<_>>();
-
-        let mut vertices = vertices
-            .into_iter()
-            .enumerate()
-            .map(|(i, pos)| Vertex {
-                pos: pos.to_array(),
-                normal: normals[i / 3].to_array(),
-            })
-            .collect::<Vec<_>>();
-
-        if false {
-            vertices.clear();
-            let mut rng = nanorand::wyrand::WyRand::new();
-            for i in 0..10 * 3 {
-                let r = rng.rand();
-                let r = r.map(|a| a as f32 / u8::MAX as f32);
-                let mut v = vec3a(r[0], r[1], r[2]);
-                v = v;
-                v = v - 0.5;
-                v = v * 5.0;
-
-                v = v / v.max_element();
-                let vertex = Vertex {
-                    pos: v.into(),
-                    normal: [r[3], 0.0, 0.0],
-                };
-
-                vertices.push(vertex);
-            }
-        }
-
-        let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
-            name: "vertex buffer",
-            size: (vertices.len() * std::mem::size_of::<Vertex>()) as u64,
-            memory: gpu::Memory::Shared,
-        });
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                vertices.as_ptr(),
-                vertex_buf.data() as *mut Vertex,
-                vertices.len(),
-            );
-        }
-
-        let indices = (0..vertices.len())
-            .into_iter()
-            .map(|a| a as u32)
-            .collect::<Vec<_>>();
-        let index_buf = ctx.create_buffer(gpu::BufferDesc {
-            name: "index buffer",
-            size: (indices.len() * std::mem::size_of::<u32>()) as u64,
-            memory: gpu::Memory::Shared,
-        });
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(
-                indices.as_ptr(),
-                index_buf.data() as *mut u32,
-                indices.len(),
-            );
-        }
+        // unsafe {
+        //     std::ptr::copy_nonoverlapping(
+        //         indices.as_ptr(),
+        //         index_buf.data() as *mut u32,
+        //         indices.len(),
+        //     );
+        // }
         let mut meshes = vec![];
 
-        let test_mesh = Mesh {
-            vertex_buf: vertex_buf.into(),
-            num_vertices: vertices.len(),
-            index_buf: Some(index_buf.into()),
-            num_indices: indices.len(),
-        };
-        meshes.push(test_mesh);
+        // let test_mesh = Mesh {
+        //     vertex_buf: vertex_buf.into(),
+        //     num_vertices: vertices.len(),
+        //     index_buf: Some(index_buf.into()),
+        //     num_indices: indices.len(),
+        // };
+        // meshes.push(test_mesh);
 
-        ctx.sync_buffer(vertex_buf);
-        ctx.sync_buffer(index_buf);
+        // ctx.sync_buffer(vertex_buf);
+        // ctx.sync_buffer(index_buf);
 
-        let mut command_encoder = ctx.create_command_encoder(gpu::CommandEncoderDesc {
+        let command_encoder = ctx.create_command_encoder(gpu::CommandEncoderDesc {
             name: "main",
             buffer_count: 2,
         });
@@ -327,87 +412,208 @@ impl State {
         meshes.clear();
         meshes.push(gpu_sponza);
 
+        let g_buffer = GBuffer::new(&ctx, width, height);
+
+        let screen_quad_vertices = [
+            vec3(-1.0, -1.0, 0.0),
+            vec3(1.0, -1.0, 0.0),
+            vec3(-1.0, 1.0, 0.0),
+            vec3(1.0, -1.0, 0.0),
+            vec3(1.0, 1.0, 0.0),
+            vec3(-1.0, 1.0, 0.0),
+        ]
+        .map(|a| Vertex {
+            pos: a.to_array(),
+            normal: Default::default(),
+        });
+
+        let screen_quad_vertices = [
+            vec3(0.2, 0.2, 1.0),
+            vec3(0.8, 0.2, 1.0),
+            vec3(0.5, 0.8, 1.0),
+            vec3(-0.2, -0.2, 1.0),
+            vec3(-0.8, -0.2, 1.0),
+            vec3(-0.5, -0.8, 1.0),
+        ]
+        .map(|a| Vertex {
+            pos: a.to_array(),
+            normal: [1.0, 0.0, 0.0],
+        });
+        let screen_quad_buf = ctx.create_buffer(gpu::BufferDesc {
+            name: "screen quad buf",
+            size: (screen_quad_vertices.len() * std::mem::size_of::<Vertex>()) as u64,
+            memory: gpu::Memory::Shared,
+        });
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                screen_quad_vertices.as_ptr(),
+                screen_quad_buf.data() as *mut Vertex,
+                screen_quad_vertices.len(),
+            );
+        }
+        ctx.sync_buffer(screen_quad_buf);
+
         Self {
-            pipeline,
             command_encoder,
             ctx,
             surface,
             prev_sync_point: None,
             meshes,
             camera: Camera::default_from_aspect(aspect),
-            depth_view,
             retained_input: Default::default(),
-            vertices,
-            depth_sampler,
+            // vertices,
+            g_buffer,
+            geometry_pipeline,
+            light_pipeline,
+            screen_quad_buf: screen_quad_buf.into(),
         }
     }
 
     pub fn render(&mut self) {
+        // let frame = self.surface.acquire_frame();
+        // self.command_encoder.start();
+        // self.command_encoder.init_texture(frame.texture());
+
+        // if false {
+        //     if let mut geometry_pass = self.command_encoder.render(
+        //         "geometry",
+        //         gpu::RenderTargetSet {
+        //             colors: &[
+        //                 gpu::RenderTarget {
+        //                     view: self.g_buffer.pos_view,
+        //                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+        //                     finish_op: gpu::FinishOp::Store,
+        //                 },
+        //                 gpu::RenderTarget {
+        //                     view: self.g_buffer.normal_view,
+        //                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+        //                     finish_op: gpu::FinishOp::Store,
+        //                 },
+        //             ],
+        //             depth_stencil: Some(gpu::RenderTarget {
+        //                 view: self.g_buffer.depth_view,
+        //                 init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+        //                 finish_op: gpu::FinishOp::Discard,
+        //             }),
+        //         },
+        //     ) {
+        //         let rc = geometry_pass.with(&self.geometry_pipeline);
+        //     }
+        // }
+
         let frame = self.surface.acquire_frame();
         self.command_encoder.start();
         self.command_encoder.init_texture(frame.texture());
-        if let mut pass = self.command_encoder.render(
-            "main",
+        if let mut light_pass = self.command_encoder.render(
+            "light",
             gpu::RenderTargetSet {
                 colors: &[gpu::RenderTarget {
                     view: frame.texture_view(),
                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                     finish_op: gpu::FinishOp::Store,
                 }],
-                depth_stencil: Some(gpu::RenderTarget {
-                    view: self.depth_view,
-                    init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
-                    finish_op: gpu::FinishOp::Discard,
-                }),
+                depth_stencil: None,
             },
         ) {
-            let mut rc = pass.with(&self.pipeline);
-
-            rc.bind(
-                0,
-                &Params {
-                    globals: Globals {
-                        mvp_transform: self.camera.vp().to_cols_array_2d(),
-                        cam_pos: self.camera.pos.to_array(),
-                        cam_dir: self.camera.right_forward_up()[1].to_array(),
-                        pad: [0; 2],
-                    },
-                    depth_view: self.depth_view,
-                    depth_sampler: self.depth_sampler,
-                },
-            );
-
-            // let q = vp * p;
-            // let q = q.xyz() / q.w;
-
-            // dbg!(q);
-
-            for mesh in self.meshes.iter() {
-                rc.bind_vertex(0, mesh.vertex_buf);
-                if false {
-                    if let Some(index_buf) = mesh.index_buf {
-                        rc.draw_indexed(
-                            index_buf,
-                            gpu::IndexType::U32,
-                            mesh.num_indices as _,
-                            0,
-                            0,
-                            1,
-                        );
-                    }
-                } else {
-                    rc.draw(0, mesh.num_vertices as _, 0, 1);
-                }
-                // rc.bind(1, )
-                // rc.bind(0, )
-            }
+            let mut rc = light_pass.with(&self.light_pipeline);
+            // rc.bind(
+            //     0,
+            //     &Params {
+            //         globals: Globals {
+            //             mvp_transform: self.camera.vp().to_cols_array_2d(),
+            //             cam_pos: self.camera.pos.to_array(),
+            //             cam_dir: self.camera.right_forward_up()[1].to_array(),
+            //             pad: [0; 2],
+            //         },
+            //         depth_view: self.g_buffer.depth_view,
+            //         depth_sampler: self.g_buffer.depth_sampler,
+            //     },
+            rc.bind_vertex(0, self.screen_quad_buf);
+            let num_quad_vertices = 6;
+            // rc.draw(0, num_quad_vertices as _, 0, 1);
+            rc.draw(0, num_quad_vertices as _, 0, 1);
         }
+
+        // self.command_encoder.present(frau
+
+        // self.ctx.sync_buffer()
+        // if let mut pass = self.command_encoder.render(
+        //     "main",
+        //     gpu::RenderTargetSet {
+        //         colors: &[gpu::RenderTarget {
+        //             view: frame.texture_view(),
+        //             init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+        //             finish_op: gpu::FinishOp::Store,
+        //         }],
+        //         depth_stencil: Some(gpu::RenderTarget {
+        //             view: self.g_buffer.depth_view,
+        //             init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+        //             finish_op: gpu::FinishOp::Discard,
+        //         }),
+        //     },
+        // ) {
+        //     let mut rc = pass.with(&self.pipeline);
+
+        //     rc.bind(
+        //         0,
+        //         &Params {
+        //             globals: Globals {
+        //                 mvp_transform: self.camera.vp().to_cols_array_2d(),
+        //                 cam_pos: self.camera.pos.to_array(),
+        //                 cam_dir: self.camera.right_forward_up()[1].to_array(),
+        //                 pad: [0; 2],
+        //             },
+        //             depth_view: self.g_buffer.depth_view,
+        //             depth_sampler: self.g_buffer.depth_sampler,
+        //         },
+        //     );
+
+        //     // let q = vp * p;
+        //     // let q = q.xyz() / q.w;
+
+        //     // dbg!(q);
+
+        //     for mesh in self.meshes.iter() {
+        //         rc.bind_vertex(0, mesh.vertex_buf);
+        //         if false {
+        //             if let Some(index_buf) = mesh.index_buf {
+        //                 rc.draw_indexed(
+        //                     index_buf,
+        //                     gpu::IndexType::U32,
+        //                     mesh.num_indices as _,
+        //                     0,
+        //                     0,
+        //                     1,
+        //                 );
+        //             }
+        //         } else {
+        //             rc.draw(0, mesh.num_vertices as _, 0, 1);
+        //         }
+        //         // rc.bind(1, )
+        //         // rc.bind(0, )
+        //     }
+        // }
+
+        // let mut vertex_pass = self.command_encoder.render(
+        //     "vertex pass",
+        //     gpu::RenderTargetSet {
+        //         colors: &[gpu::RenderTarget {
+        //             view: frame.texture_view(),
+        //             init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+        //             finish_op: gpu::FinishOp::Store,
+        //         }],
+        //         depth_stencil: todo!(),
+        //     },
+        // );
+
         self.command_encoder.present(frame);
-        let sync_point = self.ctx.submit(&mut self.command_encoder);
-        if let Some(sp) = self.prev_sync_point.take() {
-            self.ctx.wait_for(&sp, !0);
-        }
-        self.prev_sync_point = Some(sync_point);
+        let sp = self.ctx.submit(&mut self.command_encoder);
+        self.ctx.wait_for(&sp, !0);
+        // let sync_point = self.ctx.submit(&mut self.command_encoder);
+        // if let Some(sp) = self.prev_sync_point.take() {
+        //     self.ctx.wait_for(&sp, !0);
+        // }
+        // self.prev_sync_point = Some(sync_point);
     }
     pub fn handle_input(&mut self) {
         let [r, f, u] = self.camera.right_forward_up();
