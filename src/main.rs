@@ -427,18 +427,18 @@ impl State {
             normal: Default::default(),
         });
 
-        let screen_quad_vertices = [
-            vec3(0.2, 0.2, 1.0),
-            vec3(0.8, 0.2, 1.0),
-            vec3(0.5, 0.8, 1.0),
-            vec3(-0.2, -0.2, 1.0),
-            vec3(-0.8, -0.2, 1.0),
-            vec3(-0.5, -0.8, 1.0),
-        ]
-        .map(|a| Vertex {
-            pos: a.to_array(),
-            normal: [1.0, 0.0, 0.0],
-        });
+        // let screen_quad_vertices = [
+        //     vec3(0.2, 0.2, 1.0),
+        //     vec3(0.8, 0.2, 1.0),
+        //     vec3(0.5, 0.8, 1.0),
+        //     vec3(-0.2, -0.2, 1.0),
+        //     vec3(-0.8, -0.2, 1.0),
+        //     vec3(-0.5, -0.8, 1.0),
+        // ]
+        // .map(|a| Vertex {
+        //     pos: a.to_array(),
+        //     normal: [1.0, 0.0, 0.0],
+        // });
         let screen_quad_buf = ctx.create_buffer(gpu::BufferDesc {
             name: "screen quad buf",
             size: (screen_quad_vertices.len() * std::mem::size_of::<Vertex>()) as u64,
