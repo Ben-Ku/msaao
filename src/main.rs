@@ -36,6 +36,9 @@ pub struct LightParams {
 
     pub normal_view: gpu::TextureView,
     pub normal_sampler: gpu::Sampler,
+
+    pub depth_view: gpu::TextureView,
+    pub depth_sampler: gpu::Sampler,
     // pub pos_view: gpu::TextureView,
     // pub pos_sampler: gpu::Sampler,
 }
@@ -82,6 +85,13 @@ pub struct GBuffer {
     pub pos_sampler: gpu::Sampler,
     pub normal_sampler: gpu::Sampler,
 }
+
+// pub DepthTextures {
+
+//     pub depth_texture: gpu::Texture,
+//     pub pos_texture: gpu::Texture,
+//     pub normal_texture: gpu::Texture,
+// }
 
 pub struct Pipelines {
     pub fill_gbuffer: gpu::RenderPipeline,
@@ -141,6 +151,8 @@ impl GBuffer {
             height,
             depth: 1,
         };
+
+        dbg!(extent);
         let depth_texture = ctx.create_texture(gpu::TextureDesc {
             name: "depth texture",
             format: gpu::TextureFormat::Depth32Float,
@@ -161,7 +173,7 @@ impl GBuffer {
         );
         let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
             name: "depth sampler",
-            compare: Some(gpu::CompareFunction::LessEqual),
+            // compare: Some(gpu::CompareFunction::LessEqual),
             ..Default::default()
         });
 
@@ -529,7 +541,7 @@ impl State {
                 depth_stencil: Some(gpu::RenderTarget {
                     view: self.g_buffer.depth_view,
                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
-                    finish_op: gpu::FinishOp::Discard,
+                    finish_op: gpu::FinishOp::Store,
                 }),
             },
         ) {
@@ -581,6 +593,8 @@ impl State {
                         pos_sampler: self.g_buffer.pos_sampler,
                         normal_view: self.g_buffer.normal_view,
                         normal_sampler: self.g_buffer.normal_sampler,
+                        depth_view: self.g_buffer.depth_view,
+                        depth_sampler: self.g_buffer.depth_sampler,
                     },
                 );
                 rc.bind_vertex(0, self.screen_quad_buf);

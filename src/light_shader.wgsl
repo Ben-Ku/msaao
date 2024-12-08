@@ -9,6 +9,9 @@ var pos_sampler: sampler;
 var normal_view: texture_2d<f32>;
 var normal_sampler: sampler;
 
+var depth_view: texture_depth_2d;
+var depth_sampler: sampler;
+
 
 struct Vertex {
     pos: vec3<f32>,
@@ -30,6 +33,8 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let normal = textureSample(normal_view, normal_sampler, vertex.uv);
 
 
+    let depth = textureSample(depth_view, depth_sampler, vertex.uv);
+
     let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
     let ndotl = max(dot(normal.xyz, -sun_dir), 0.0);
     
@@ -49,6 +54,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     var c = vec3(ndotl);
     c += ambient;
+    // c = vec3(depth);
     return vec4(c, 1.0);
     // return vec4(pos_01.xy,0.0,1.0);
 }
