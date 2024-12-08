@@ -36,8 +36,13 @@ fn vs_main(vertex: Vertex) -> VertexOutput {
     return vs_out;
 }
 
+struct FragmentOutput {
+    @location(0) ws_pos : vec4<f32>,
+    @location(1) normal : vec4<f32>
+}
+
 @fragment
-fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     let clip_pos = vertex.clip_pos;
 
@@ -57,5 +62,11 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     c.x = depth;
     // c.x = h;
 
-    return vec4(c,1.0);
+    // let ws_pos = vec4(vertex.ws_pos,clip_pos.z);
+    let ws_pos = vec4(vertex.ws_pos,clip_pos.z);
+    let normal = vec4(vertex.normal, 0.0);
+
+
+    return FragmentOutput(ws_pos, normal);
+    // return vec4(c,1.0);
 }
