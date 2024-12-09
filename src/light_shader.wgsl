@@ -21,7 +21,7 @@ struct Vertex {
 fn linearize_depth(d: f32) -> f32
 {
     let zFar = 100.0;
-    let zNear = 0.1;
+    let zNear = 0.001;
     return zNear * zFar / (zFar + d * (zNear - zFar));
 }
 
