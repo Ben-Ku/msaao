@@ -18,6 +18,13 @@ struct Vertex {
     normal: vec3<f32>,
 };
 
+fn linearize_depth(d: f32) -> f32
+{
+    let zFar = 100.0;
+    let zNear = 0.1;
+    return zNear * zFar / (zFar + d * (zNear - zFar));
+}
+
 
 @vertex
 fn vs_main(vertex: Vertex) -> VertexOutput {
@@ -33,7 +40,7 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let normal = textureSample(normal_view, normal_sampler, vertex.uv);
 
 
-    let depth = textureSample(depth_view, depth_sampler, vertex.uv);
+    var depth = textureSample(depth_view, depth_sampler, vertex.uv);
 
     let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
     let ndotl = max(dot(normal.xyz, -sun_dir), 0.0);
@@ -54,7 +61,8 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     var c = vec3(ndotl);
     c += ambient;
-    // c = vec3(depth);
+    depth = linearize_depth(depth);
+    c = vec3(depth);
     return vec4(c, 1.0);
     // return vec4(pos_01.xy,0.0,1.0);
 }

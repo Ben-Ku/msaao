@@ -39,6 +39,8 @@ pub struct LightParams {
 
     pub depth_view: gpu::TextureView,
     pub depth_sampler: gpu::Sampler,
+    // pub near: f32,
+    // pub far: f32,
     // pub pos_view: gpu::TextureView,
     // pub pos_sampler: gpu::Sampler,
 }
@@ -86,12 +88,69 @@ pub struct GBuffer {
     pub normal_sampler: gpu::Sampler,
 }
 
-// pub DepthTextures {
+pub struct TextureStuff {
+    pub texture: gpu::Texture,
+    pub view: gpu::TextureView,
+    pub sampler: gpu::Sampler,
+    pub size: gpu::Extent,
+}
 
-//     pub depth_texture: gpu::Texture,
-//     pub pos_texture: gpu::Texture,
-//     pub normal_texture: gpu::Texture,
-// }
+pub struct DepthTextures {
+    pub texture_stuffs: Vec<TextureStuff>,
+}
+
+pub fn create_depth_textures(ctx: &gpu::Context, screen_size: gpu::Extent) -> DepthTextures {
+    let mut texture_stuffs = vec![];
+    let num_textures = 5;
+    let mut width = screen_size.width;
+    let mut height = screen_size.height;
+
+    for i in 0..num_textures {
+        let pow_2 = 1 << i;
+        let width_i = width / pow_2;
+        let height_i = width / pow_2;
+
+        let extent_i = gpu::Extent {
+            width,
+            height,
+            depth: 1,
+        };
+
+        let depth_texture_i = ctx.create_texture(gpu::TextureDesc {
+            name: format!("depth texture {i}").as_str(),
+            format: gpu::TextureFormat::Depth32Float,
+            size: extent_i,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let depth_view_i = ctx.create_texture_view(
+            depth_texture_i,
+            gpu::TextureViewDesc {
+                name: format!("depth view {i}").as_str(),
+                format: gpu::TextureFormat::Depth32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let depth_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
+            name: format!("depth sampler {i}").as_str(),
+            // compare: Some(gpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+
+        let texture_stuff_i = TextureStuff {
+            texture: depth_texture_i,
+            view: depth_view_i,
+            sampler: depth_sampler_i,
+            size: extent_i,
+        };
+        texture_stuffs.push(texture_stuff_i);
+    }
+
+    DepthTextures { texture_stuffs }
+}
 
 pub struct Pipelines {
     pub fill_gbuffer: gpu::RenderPipeline,
@@ -301,6 +360,7 @@ pub struct State {
     pub retained_input: RetainedInput,
     pub g_buffer: GBuffer,
     pub screen_quad_buf: gpu::BufferPiece,
+    pub depth_textures: DepthTextures,
 }
 
 #[derive(Default)]
@@ -324,16 +384,19 @@ impl State {
         let size = window.inner_size();
         let width = size.width;
         let height = size.height;
+
+        let screen_extent = gpu::Extent {
+            width,
+            height,
+            depth: 1,
+        };
+
         let aspect = width as f32 / height as f32;
         let surface = ctx
             .create_surface_configured(
                 window,
                 gpu::SurfaceConfig {
-                    size: gpu::Extent {
-                        width,
-                        height,
-                        depth: 1,
-                    },
+                    size: screen_extent,
                     usage: gpu::TextureUsage::TARGET,
                     display_sync: gpu::DisplaySync::Recent,
                     ..Default::default()
@@ -344,11 +407,7 @@ impl State {
         let depth_texture = ctx.create_texture(gpu::TextureDesc {
             name: "depth",
             format: gpu::TextureFormat::Depth32Float,
-            size: gpu::Extent {
-                width,
-                height,
-                depth: 1,
-            },
+            size: screen_extent,
             array_layer_count: 1,
             mip_level_count: 1,
             dimension: gpu::TextureDimension::D2,
@@ -500,6 +559,8 @@ impl State {
         }
         ctx.sync_buffer(screen_quad_buf);
 
+        let depth_textures = create_depth_textures(&ctx, screen_extent);
+
         Self {
             command_encoder,
             ctx,
@@ -511,6 +572,7 @@ impl State {
             g_buffer,
             light_pipeline,
             screen_quad_buf: screen_quad_buf.into(),
+            depth_textures,
         }
     }
 
@@ -595,6 +657,8 @@ impl State {
                         normal_sampler: self.g_buffer.normal_sampler,
                         depth_view: self.g_buffer.depth_view,
                         depth_sampler: self.g_buffer.depth_sampler,
+                        // near: todo!(),
+                        // far: todo!(),
                     },
                 );
                 rc.bind_vertex(0, self.screen_quad_buf);
