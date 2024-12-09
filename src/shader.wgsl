@@ -41,10 +41,12 @@ struct FragmentOutput {
     @location(1) normal : vec4<f32>
 }
 
+
 @fragment
 fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     let clip_pos = vertex.clip_pos;
+
 
     let depth = textureSampleCompare(depth_view, depth_sampler, vec2(0.5), 0.1);
     // let depth = textureSampleCompare(depth_view, depth_sampler, clip_pos.xy, 0.1);
@@ -57,16 +59,22 @@ fn fs_main(vertex: VertexOutput) -> FragmentOutput {
 
     var c = vec3(0.0);
     c += ndotl;
+
     c += ambient;
+
 
     c.x = depth;
     // c.x = h;
 
+
+
     // let ws_pos = vec4(vertex.ws_pos,clip_pos.z);
     let ws_pos = vec4(vertex.ws_pos,clip_pos.z);
+
     let normal = vec4(vertex.normal, 0.0);
 
 
     return FragmentOutput(ws_pos, normal);
     // return vec4(c,1.0);
 }
+

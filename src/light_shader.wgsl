@@ -26,6 +26,39 @@ fn linearize_depth(d: f32) -> f32
 }
 
 
+@fragment
+fn fs_downsample(vertex: VertexOutput) -> @location(0) vec4<f32> {
+    
+    // let ws_pos = textureSample(pos_view, pos_sampler, vertex.uv);
+    // let normal = textureSample(normal_view, normal_sampler, vertex.uv);
+
+
+    // var depth = textureSample(depth_view, depth_sampler, vertex.uv);
+
+    // let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
+    // let ndotl = max(dot(normal.xyz, -sun_dir), 0.0);
+    
+
+    // let ambient = 0.2;
+    // // let pos = vertex.pos;
+    // // let pos_01 = 0.5*pos + 0.5;
+
+    // // let d = pos.length()
+    // var r = 1.0;
+    // var b = 0.0;
+
+    // // if pos_01.x > 100.0 {
+    // //     b = 1.0;
+    // //     r = 0.0;
+    // // }
+
+    var c = vec3(1.0);
+    // c += ambient;
+    // depth = linearize_depth(depth);
+    // c = vec3(depth) * vec3(1.0,0.0,0.0);
+    return vec4(c, 1.0);
+}
+
 @vertex
 fn vs_main(vertex: Vertex) -> VertexOutput {
     var uv = 0.5*vertex.pos.xy + 0.5;
@@ -63,6 +96,6 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     c += ambient;
     depth = linearize_depth(depth);
     c = vec3(depth);
-    return vec4(c, 1.0);
+    return vec4(c / 15.0, 1.0);
     // return vec4(pos_01.xy,0.0,1.0);
 }
