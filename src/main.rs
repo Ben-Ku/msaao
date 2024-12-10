@@ -474,7 +474,7 @@ pub struct State {
     pub retained_input: RetainedInput,
     pub g_buffer: GBuffer,
     pub screen_quad_buf: gpu::BufferPiece,
-    pub depth_textures: DepthTextures,
+    // pub depth_textures: DepthTextures,
 }
 
 #[derive(Default)]
@@ -647,7 +647,7 @@ impl State {
         }
         ctx.sync_buffer(screen_quad_buf);
 
-        let depth_textures = create_depth_textures(&ctx, screen_extent);
+        // let depth_textures = create_depth_textures(&ctx, screen_extent);
 
         let pipelines = Pipelines::create_pipelines(&ctx, &surface).unwrap();
 
@@ -661,15 +661,15 @@ impl State {
             retained_input: Default::default(),
             g_buffer,
             screen_quad_buf: screen_quad_buf.into(),
-            depth_textures,
+            // depth_textures,
             pipelines,
         }
     }
 
     pub fn render_depth_downsamples(&mut self) {
-        for i in 1..self.depth_textures.texture_stuffs.len() {
-            let texture_from = &self.depth_textures.texture_stuffs[i - 1];
-            let texture_to = &self.depth_textures.texture_stuffs[i];
+        for i in 1..self.g_buffer.depth_textures.texture_stuffs.len() {
+            let texture_from = &self.g_buffer.depth_textures.texture_stuffs[i - 1];
+            let texture_to = &self.g_buffer.depth_textures.texture_stuffs[i];
 
             if let mut depth_downsample_pass = self.command_encoder.render(
                 format!("depth downsample {i}").as_str(),
@@ -705,7 +705,7 @@ impl State {
         self.command_encoder.init_texture(self.g_buffer.pos_texture);
         self.command_encoder
             .init_texture(self.g_buffer.normal_texture);
-        for d in self.depth_textures.texture_stuffs.iter() {
+        for d in self.g_buffer.depth_textures.texture_stuffs.iter() {
             self.command_encoder.init_texture(d.texture);
         }
 
