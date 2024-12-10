@@ -490,7 +490,7 @@ impl State {
                 validation: true,
                 timing: false,
                 capture: false,
-                overlay: false,
+                overlay: true,
                 device_id: 0,
             })
             .unwrap()

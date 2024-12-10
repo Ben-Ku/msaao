@@ -13,6 +13,9 @@ var depth_view: texture_depth_2d;
 var depth_sampler: sampler;
 
 
+var depth_from: texture_depth_2d;
+var depth_from_sampler: sampler;
+
 struct Vertex {
     pos: vec3<f32>,
     normal: vec3<f32>,
@@ -29,7 +32,8 @@ fn linearize_depth(d: f32) -> f32
 @fragment
 fn fs_downsample(vertex: VertexOutput) -> @builtin(frag_depth) f32 {
     
-    // let ws_pos = textureSample(pos_view, pos_sampler, vertex.uv);
+
+    let depth = textureSample(depth_from, depth_from_sampler, vertex.uv);
     // let normal = textureSample(normal_view, normal_sampler, vertex.uv);
 
 
@@ -56,7 +60,7 @@ fn fs_downsample(vertex: VertexOutput) -> @builtin(frag_depth) f32 {
     // c += ambient;
     // depth = linearize_depth(depth);
     // c = vec3(depth) * vec3(1.0,0.0,0.0);
-    return 0.5;
+    return depth;
 }
 
 @vertex
