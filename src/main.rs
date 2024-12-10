@@ -667,11 +667,12 @@ impl State {
     }
 
     pub fn render_depth_downsamples(&mut self) {
+        for d in self.depth_textures.texture_stuffs.iter() {
+            self.command_encoder.init_texture(d.texture);
+        }
         for i in 1..self.depth_textures.texture_stuffs.len() {
             let texture_from = &self.depth_textures.texture_stuffs[i - 1];
             let texture_to = &self.depth_textures.texture_stuffs[i];
-
-            self.command_encoder.init_texture(texture_to.texture);
 
             if let mut depth_downsample_pass = self.command_encoder.render(
                 format!("depth downsample {i}").as_str(),
