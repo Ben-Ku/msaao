@@ -42,30 +42,41 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
     let depth = textureSample(depth_view, depth_sampler, vertex.uv);
     let subpixel_depths = textureGather(depth_view, depth_sampler, vertex.uv);
 
-    var x = subpixel_depths.x;
-    var y = subpixel_depths.y;
-    var z = subpixel_depths.z;
-    var w = subpixel_depths.w;
 
-    let max_xy = max(x,y);
-    let min_xy = min(x,y);
 
-    let max_zw = max(z,w);
-    let min_zw = min(z,w);
+    // if(num1>num2) swap(&num1,&num2);
+    // if(num3>num4) swap(&num3,&num4);
+    // if(num1>num3) swap(&num1,&num3);
+    // if(num2>num4) swap(&num2,&num4);
+    // if(num2>num3) swap(&num2,&num3);
+    var idx = vec4<i32>(0,1,2,3);
+    const idxs1 = array<i32,5>(0, 2, 0, 1, 1);
+    const idxs2 = array<i32,5>(1, 3, 2, 3, 2);
+    var i1: i32;
+    var i2: i32;
+    var tmp: i32;
+    // sort indices in ascending order based on depth
+    for (var i: i32 = 0; i < 5; i++) {
+        i1 = idxs1[i];
+        i2 = idxs2[i];
+        if subpixel_depths[idx[i1]] > subpixel_depths[idx[i2]] {
+            tmp = idx[i1];
+            idx[i1] = idx[i2];
+            idx[i2] = tmp;
+        }
+    }
 
-    let max_xyzw = max(max_xy, max_zw);
-    let min_xyzw = min(min_xy, min_zw);
-
-    let d0 = min_xyzw;
-    let d3 = max_xyzw;
-
-    let d_thresh = 0.1;
-
-    // if d3 - d0  > d_thresh {
-                
+    var c = depth;
+    // let d0 = subpixel_depths[idx[0]];
+    // let d1 = subpixel_depths[idx[1]];
+    // let d2 = subpixel_depths[idx[2]];
+    // let d3 = subpixel_depths[idx[3]];
+    // let sort_is_good = (d0 <= d1) && (d1 <= d2) && (d2 <= d3);
+    // if !sort_is_good {
+    //     c = 0.0;   
     // }
 
-    let output = DownSampleOutput(depth, vec4(0.0), vec4(0.0));
+    let output = DownSampleOutput(c, vec4(0.0), vec4(0.0));
     
     return output;
 }
