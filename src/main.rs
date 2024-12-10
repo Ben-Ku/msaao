@@ -671,6 +671,8 @@ impl State {
             let texture_from = &self.depth_textures.texture_stuffs[i - 1];
             let texture_to = &self.depth_textures.texture_stuffs[i];
 
+            self.command_encoder.init_texture(texture_to.texture);
+
             if let mut depth_downsample_pass = self.command_encoder.render(
                 format!("depth downsample {i}").as_str(),
                 gpu::RenderTargetSet {
