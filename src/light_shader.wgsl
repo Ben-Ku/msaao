@@ -27,7 +27,7 @@ fn linearize_depth(d: f32) -> f32
 
 
 @fragment
-fn fs_downsample(vertex: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_downsample(vertex: VertexOutput) -> @builtin(frag_depth) f32 {
     
     // let ws_pos = textureSample(pos_view, pos_sampler, vertex.uv);
     // let normal = textureSample(normal_view, normal_sampler, vertex.uv);
@@ -52,11 +52,11 @@ fn fs_downsample(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // //     r = 0.0;
     // // }
 
-    var c = vec3(1.0);
+    // var c = vec3(1.0);
     // c += ambient;
     // depth = linearize_depth(depth);
     // c = vec3(depth) * vec3(1.0,0.0,0.0);
-    return vec4(c, 1.0);
+    return 0.5;
 }
 
 @vertex
@@ -96,6 +96,5 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     c += ambient;
     depth = linearize_depth(depth);
     c = vec3(depth);
-    return vec4(c / 15.0, 1.0);
-    // return vec4(pos_01.xy,0.0,1.0);
+    return vec4(c / 10.0, 1.0);
 }
