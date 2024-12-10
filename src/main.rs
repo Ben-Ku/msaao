@@ -667,9 +667,6 @@ impl State {
     }
 
     pub fn render_depth_downsamples(&mut self) {
-        for d in self.depth_textures.texture_stuffs.iter() {
-            self.command_encoder.init_texture(d.texture);
-        }
         for i in 1..self.depth_textures.texture_stuffs.len() {
             let texture_from = &self.depth_textures.texture_stuffs[i - 1];
             let texture_to = &self.depth_textures.texture_stuffs[i];
@@ -708,6 +705,9 @@ impl State {
         self.command_encoder.init_texture(self.g_buffer.pos_texture);
         self.command_encoder
             .init_texture(self.g_buffer.normal_texture);
+        for d in self.depth_textures.texture_stuffs.iter() {
+            self.command_encoder.init_texture(d.texture);
+        }
 
         let depth_texture_stuff = &self.g_buffer.depth_textures.texture_stuffs[0];
         if let mut geometry_pass = self.command_encoder.render(
