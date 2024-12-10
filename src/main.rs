@@ -298,7 +298,7 @@ impl Pipelines {
             depth_stencil: Some(gpu::DepthStencilState {
                 format: gpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: gpu::CompareFunction::Never,
+                depth_compare: gpu::CompareFunction::Always,
                 stencil: gpu::StencilState::default(),
                 bias: gpu::DepthBiasState::default(),
             }),
