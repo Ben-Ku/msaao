@@ -704,6 +704,11 @@ impl State {
 
     pub fn render(&mut self) {
         self.command_encoder.start();
+
+        self.command_encoder.init_texture(self.g_buffer.pos_texture);
+        self.command_encoder
+            .init_texture(self.g_buffer.normal_texture);
+
         let depth_texture_stuff = &self.g_buffer.depth_textures.texture_stuffs[0];
         if let mut geometry_pass = self.command_encoder.render(
             "geometry",
