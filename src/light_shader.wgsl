@@ -32,7 +32,7 @@ fn linearize_depth(d: f32) -> f32
 @fragment
 fn fs_downsample(vertex: VertexOutput) -> @builtin(frag_depth) f32 {
     let depth = textureSample(depth_from, depth_from_sampler, vertex.uv);
-    return 0.5;
+    return depth;
 }
 
 @vertex

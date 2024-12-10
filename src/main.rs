@@ -540,7 +540,7 @@ impl State {
 
         let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
             name: "depth sampler",
-            compare: Some(gpu::CompareFunction::LessEqual),
+            compare: Some(gpu::CompareFunction::Less),
             ..Default::default()
         });
 
