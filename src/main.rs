@@ -13,14 +13,12 @@ pub const TAU: f32 = 2.0 * PI;
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct Globals {
     mvp_transform: [[f32; 4]; 4],
+    mv_transform: [[f32; 4]; 4],
+    mv_rot: [[f32; 4]; 4],
     cam_pos: [f32; 3],
     cam_dir: [f32; 3],
     pad: [u32; 2],
 }
-
-// pub LightGlobals {
-
-// }
 
 #[derive(blade_macros::ShaderData)]
 pub struct GeometryParams {
@@ -43,6 +41,7 @@ pub struct GeometryParams {
 
 #[derive(blade_macros::ShaderData)]
 pub struct DepthPosNormalParams {
+    pub globals: Globals,
     pub depth_view: gpu::TextureView,
     pub depth_sampler: gpu::Sampler,
 
@@ -61,8 +60,8 @@ pub struct DepthPosNormalParams {
 
 #[derive(blade_macros::Vertex, Debug)]
 pub struct Vertex {
-    pub pos: [f32; 3],
-    pub normal: [f32; 3],
+    pub ws_pos: [f32; 3],
+    pub ws_normal: [f32; 3],
 }
 
 pub struct Mesh {
@@ -475,156 +474,9 @@ impl Pipelines {
             last_modified_shader_time: last_modified,
         })
     }
-
-    // pub fn new(ctx: &gpu::Context) {
-    //     // let fill_gbuffer =  ctx.create_render_pipeline(
-    //     //     gpu::RenderPipelineDesc {
-    //     //      name: "fill gbuffer",
-    //     //      data_layouts: todo!(),
-    //     //      vertex: todo!(),
-    //     //      vertex_fetches: todo!(),
-    //     //      primitive: todo!(),
-    //     //      depth_stencil: todo!(),
-    //     //      fragment: todo!(),
-    //     //      color_targets: todo!(),
-    //     //  }
-    //     // );
-    //     let pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
-    //         name: "geometry",
-    //         data_layouts: &[&<Params as gpu::ShaderData>::layout()],
-    //         vertex: shader.at("vs_main"),
-    //         vertex_fetches: &[gpu::VertexFetchState {
-    //             layout: &<Vertex as gpu::Vertex>::layout(),
-    //             instanced: false,
-    //         }],
-    //         primitive: gpu::PrimitiveState {
-    //             topology: gpu::PrimitiveTopology::TriangleList,
-    //             front_face: gpu::FrontFace::Ccw,
-    //             cull_mode: Some(gpu::Face::Back),
-    //             unclipped_depth: false,
-    //             wireframe: false,
-    //         },
-    //         depth_stencil: Some(gpu::DepthStencilState {
-    //             format: gpu::TextureFormat::Depth32Float,
-    //             depth_write_enabled: true,
-    //             depth_compare: gpu::CompareFunction::Less,
-    //             stencil: Default::default(),
-    //             bias: gpu::DepthBiasState::default(),
-    //         }),
-    //         fragment: shader.at("fs_main"),
-    //         color_targets: &[gpu::ColorTargetState {
-    //             format: surface.info().format,
-    //             blend: Some(gpu::BlendState::ALPHA_BLENDING),
-    //             write_mask: gpu::ColorWrites::default(),
-    //         }],
-    //     });
-    // }
 }
 
-// impl GBuffer {
-//     pub fn new(ctx: &gpu::Context, width: u32, height: u32) -> Self {
-//         let extent = gpu::Extent {
-//             width,
-//             height,
-//             depth: 1,
-//         };
-
-//         dbg!(extent);
-//         let depth_texture = ctx.create_texture(gpu::TextureDesc {
-//             name: "depth texture",
-//             format: gpu::TextureFormat::Depth32Float,
-//             size: extent,
-//             array_layer_count: 1,
-//             mip_level_count: 1,
-//             dimension: gpu::TextureDimension::D2,
-//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-//         });
-//         let depth_view = ctx.create_texture_view(
-//             depth_texture,
-//             gpu::TextureViewDesc {
-//                 name: "depth view",
-//                 format: gpu::TextureFormat::Depth32Float,
-//                 dimension: gpu::ViewDimension::D2,
-//                 subresources: &Default::default(),
-//             },
-//         );
-//         let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
-//             name: "depth sampler",
-//             // compare: Some(gpu::CompareFunction::LessEqual),
-//             ..Default::default()
-//         });
-
-//         let pos_texture = ctx.create_texture(gpu::TextureDesc {
-//             name: "pos texture",
-//             format: gpu::TextureFormat::Rgba32Float,
-//             size: extent,
-//             array_layer_count: 1,
-//             mip_level_count: 1,
-//             dimension: gpu::TextureDimension::D2,
-//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-//         });
-//         let pos_view = ctx.create_texture_view(
-//             pos_texture,
-//             gpu::TextureViewDesc {
-//                 name: "pos view",
-//                 format: gpu::TextureFormat::Rgba32Float,
-//                 dimension: gpu::ViewDimension::D2,
-//                 subresources: &Default::default(),
-//             },
-//         );
-//         let pos_sampler = ctx.create_sampler(gpu::SamplerDesc {
-//             name: "pos sampler",
-//             address_modes: Default::default(),
-//             mag_filter: gpu::FilterMode::Nearest,
-//             min_filter: gpu::FilterMode::Nearest,
-//             mipmap_filter: gpu::FilterMode::Nearest,
-//             ..Default::default()
-//         });
-
-//         let normal_texture = ctx.create_texture(gpu::TextureDesc {
-//             name: "normal texture",
-//             format: gpu::TextureFormat::Rgba32Float,
-//             size: extent,
-//             array_layer_count: 1,
-//             mip_level_count: 1,
-//             dimension: gpu::TextureDimension::D2,
-//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-//         });
-//         let normal_view = ctx.create_texture_view(
-//             normal_texture,
-//             gpu::TextureViewDesc {
-//                 name: "normal view",
-//                 format: gpu::TextureFormat::Rgba32Float,
-//                 dimension: gpu::ViewDimension::D2,
-//                 subresources: &Default::default(),
-//             },
-//         );
-//         let normal_sampler = ctx.create_sampler(gpu::SamplerDesc {
-//             name: "normal sampler",
-//             address_modes: Default::default(),
-//             mag_filter: gpu::FilterMode::Nearest,
-//             min_filter: gpu::FilterMode::Nearest,
-//             mipmap_filter: gpu::FilterMode::Nearest,
-//             ..Default::default()
-//         });
-
-//         // let depth_textures = create_depth_textures(ctx, extent);
-//         let downsample_textures = create_downsample_textures(ctx, extent)
-//         let gbuffer = GBuffer {
-//             pos_texture,
-//             normal_texture,
-//             pos_view,
-//             normal_view,
-//             pos_sampler,
-//             normal_sampler,
-//             depth_textures,
-//         };
-//         gbuffer
-//     }
-// }
-
 pub struct State {
-    // pub light_pipeline: gpu::RenderPipeline,
     pub pipelines: Pipelines,
     pub command_encoder: gpu::CommandEncoder,
     pub ctx: gpu::Context,
@@ -633,10 +485,8 @@ pub struct State {
     pub meshes: Vec<Mesh>,
     pub camera: Camera,
     pub retained_input: RetainedInput,
-    // pub g_buffer: GBuffer,
     pub screen_quad_buf: gpu::BufferPiece,
     pub downsample_textures: DownsampleTextures,
-    // pub depth_textures: DepthTextures,
 }
 
 #[derive(Default)]
@@ -680,92 +530,6 @@ impl State {
             )
             .unwrap();
 
-        let depth_texture = ctx.create_texture(gpu::TextureDesc {
-            name: "depth",
-            format: gpu::TextureFormat::Depth32Float,
-            size: screen_extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            dimension: gpu::TextureDimension::D2,
-            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-        });
-
-        let depth_view = ctx.create_texture_view(
-            depth_texture,
-            gpu::TextureViewDesc {
-                name: "depth view",
-                format: gpu::TextureFormat::Depth32Float,
-                dimension: gpu::ViewDimension::D2,
-                subresources: &Default::default(),
-            },
-        );
-
-        let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
-            name: "depth sampler",
-            compare: Some(gpu::CompareFunction::LessEqual),
-            ..Default::default()
-        });
-
-        let light_shader_source = std::fs::read_to_string("src/light_shader.wgsl").unwrap();
-        let light_shader = ctx.create_shader(gpu::ShaderDesc {
-            source: &light_shader_source,
-        });
-
-        let light_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
-            name: "light",
-            // data_layouts: &[&<Params as gpu::ShaderData>::layout()],
-            data_layouts: &[&<DepthPosNormalParams as gpu::ShaderData>::layout()],
-            vertex: light_shader.at("vs_main"),
-            vertex_fetches: &[gpu::VertexFetchState {
-                layout: &<Vertex as gpu::Vertex>::layout(),
-                instanced: false,
-            }],
-            primitive: gpu::PrimitiveState {
-                topology: gpu::PrimitiveTopology::TriangleList,
-                front_face: gpu::FrontFace::Ccw,
-                cull_mode: None,
-                unclipped_depth: false,
-                wireframe: false,
-            },
-            depth_stencil: None,
-            fragment: light_shader.at("fs_main"),
-            color_targets: &[gpu::ColorTargetState {
-                format: surface.info().format,
-                blend: Some(gpu::BlendState::REPLACE),
-                write_mask: gpu::ColorWrites::default(),
-            }],
-        });
-
-        // let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
-        //     name: "vertex buffer",
-        //     size: (vertices.len() * std::mem::size_of::<Vertex>()) as u64,
-        //     memory: gpu::Memory::Shared,
-        // });
-        // unsafe {
-        //     std::ptr::copy_nonoverlapping(
-        //         vertices.as_ptr(),
-        //         vertex_buf.data() as *mut Vertex,
-        //         vertices.len(),
-        //     );
-        // }
-
-        // let indices = (0..vertices.len())
-        //     .into_iter()
-        //     .map(|a| a as u32)
-        //     .collect::<Vec<_>>();
-        // let index_buf = ctx.create_buffer(gpu::BufferDesc {
-        //     name: "index buffer",
-        //     size: (indices.len() * std::mem::size_of::<u32>()) as u64,
-        //     memory: gpu::Memory::Shared,
-        // });
-
-        // unsafe {
-        //     std::ptr::copy_nonoverlapping(
-        //         indices.as_ptr(),
-        //         index_buf.data() as *mut u32,
-        //         indices.len(),
-        //     );
-        // }
         let mut meshes = vec![];
 
         let command_encoder = ctx.create_command_encoder(gpu::CommandEncoderDesc {
@@ -799,8 +563,8 @@ impl State {
             vec3(-1.0, 1.0, 0.0),
         ]
         .map(|a| Vertex {
-            pos: a.to_array(),
-            normal: Default::default(),
+            ws_pos: a.to_array(),
+            ws_normal: Default::default(),
         });
 
         let screen_quad_buf = ctx.create_buffer(gpu::BufferDesc {
@@ -873,6 +637,14 @@ impl State {
                         pos_sampler: textures_from.pos.sampler,
                         normal_view: textures_from.normal.view,
                         normal_sampler: textures_from.normal.sampler,
+                        globals: Globals {
+                            mvp_transform: self.camera.vp().to_cols_array_2d(),
+                            mv_transform: self.camera.view().to_cols_array_2d(),
+                            mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
+                            cam_pos: self.camera.pos.to_array(),
+                            cam_dir: self.camera.right_forward_up()[1].to_array(),
+                            pad: [0; 2],
+                        },
                     },
                 );
                 rc.bind_vertex(0, self.screen_quad_buf);
@@ -922,9 +694,11 @@ impl State {
                 &GeometryParams {
                     globals: Globals {
                         mvp_transform: self.camera.vp().to_cols_array_2d(),
+                        mv_transform: self.camera.view().to_cols_array_2d(),
                         cam_pos: self.camera.pos.to_array(),
                         cam_dir: self.camera.right_forward_up()[1].to_array(),
                         pad: [0; 2],
+                        mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
                     },
                     depth_view: textures_for_geometry_pass.depth.view,
                     depth_sampler: textures_for_geometry_pass.depth.sampler,
@@ -940,7 +714,7 @@ impl State {
         self.render_downsample();
 
         let textures_for_light_pass = &self.downsample_textures.textures[0];
-        let depth = &self.downsample_textures.textures.last().unwrap().depth;
+        // let textures_for_light_pass = &self.downsample_textures.textures.last().unwrap();
         let frame = self.surface.acquire_frame();
         self.command_encoder.init_texture(frame.texture());
         if let mut light_pass = self.command_encoder.render(
@@ -962,8 +736,16 @@ impl State {
                     pos_sampler: textures_for_light_pass.pos.sampler,
                     normal_view: textures_for_light_pass.normal.view,
                     normal_sampler: textures_for_light_pass.normal.sampler,
-                    depth_view: depth.view,
-                    depth_sampler: depth.sampler,
+                    depth_view: textures_for_light_pass.depth.view,
+                    depth_sampler: textures_for_light_pass.depth.sampler,
+                    globals: Globals {
+                        mvp_transform: self.camera.vp().to_cols_array_2d(),
+                        mv_transform: self.camera.view().to_cols_array_2d(),
+                        cam_pos: self.camera.pos.to_array(),
+                        cam_dir: self.camera.right_forward_up()[1].to_array(),
+                        pad: [0; 2],
+                        mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
+                    },
                 },
             );
             rc.bind_vertex(0, self.screen_quad_buf);
@@ -975,6 +757,7 @@ impl State {
         let sp = self.ctx.submit(&mut self.command_encoder);
         self.ctx.wait_for(&sp, !0);
     }
+
     pub fn handle_input(&mut self) {
         let [r, f, u] = self.camera.right_forward_up();
 
@@ -1040,14 +823,23 @@ impl Camera {
     // }
 
     pub fn view(&self) -> glam::Mat4 {
-        let rot_x = Quat::from_axis_angle(Vec3::X, self.pitch);
-        let rot_y = Quat::from_axis_angle(Vec3::Y, self.yaw);
-        let rot = rot_y * rot_x;
-
-        let pos = Vec3::from_array(self.pos.to_array());
+        let rot = self.rot_quat();
         let pos = Vec3::from_array(self.pos.to_array());
         let view = Mat4::from_scale_rotation_translation(Vec3A::ONE.into(), rot, pos).inverse();
         view
+    }
+
+    pub fn view_rot_only(&self) -> glam::Mat4 {
+        let rot = self.rot_quat();
+        let mat = glam::Mat4::from_rotation_translation(rot, Vec3::ZERO).inverse();
+        mat
+    }
+
+    pub fn rot_quat(&self) -> glam::Quat {
+        let rot_x = Quat::from_axis_angle(Vec3::X, self.pitch);
+        let rot_y = Quat::from_axis_angle(Vec3::Y, self.yaw);
+        let rot = rot_y * rot_x;
+        rot
     }
 
     pub fn projection(&self) -> glam::Mat4 {
@@ -1108,8 +900,8 @@ pub fn turn_mesh_into_pure_vertex_list(mesh: CpuMesh) -> Vec<Vertex> {
 
         for pos in [v0, v1, v2] {
             let new_vertex = Vertex {
-                pos: pos.to_array(),
-                normal: n.to_array(),
+                ws_pos: pos.to_array(),
+                ws_normal: n.to_array(),
             };
             vertices.push(new_vertex);
         }
@@ -1163,8 +955,8 @@ pub fn upload_mesh(ctx: &gpu::Context, mesh: CpuMesh) -> Mesh {
         .iter()
         .enumerate()
         .map(|(i, v)| Vertex {
-            pos: v.to_array(),
-            normal: normals[i / 3].to_array(),
+            ws_pos: v.to_array(),
+            ws_normal: normals[i / 3].to_array(),
         })
         .collect::<Vec<_>>();
     let vertex_buf = ctx.create_buffer(gpu::BufferDesc {
