@@ -23,33 +23,41 @@ pub struct Globals {
 // }
 
 #[derive(blade_macros::ShaderData)]
-pub struct Params {
+pub struct GeometryParams {
     pub globals: Globals,
     pub depth_view: gpu::TextureView,
     pub depth_sampler: gpu::Sampler,
 }
 
+// #[derive(blade_macros::ShaderData)]
+// pub struct LightParams {
+//     pub pos_view: gpu::TextureView,
+//     pub pos_sampler: gpu::Sampler,
+
+//     pub normal_view: gpu::TextureView,
+//     pub normal_sampler: gpu::Sampler,
+
+//     pub depth_view: gpu::TextureView,
+//     pub depth_sampler: gpu::Sampler,
+// }
+
 #[derive(blade_macros::ShaderData)]
-pub struct LightParams {
+pub struct DepthPosNormalParams {
+    pub depth_view: gpu::TextureView,
+    pub depth_sampler: gpu::Sampler,
+
     pub pos_view: gpu::TextureView,
     pub pos_sampler: gpu::Sampler,
 
     pub normal_view: gpu::TextureView,
     pub normal_sampler: gpu::Sampler,
-
-    pub depth_view: gpu::TextureView,
-    pub depth_sampler: gpu::Sampler,
-    // pub near: f32,
-    // pub far: f32,
-    // pub pos_view: gpu::TextureView,
-    // pub pos_sampler: gpu::Sampler,
 }
 
-#[derive(blade_macros::ShaderData)]
-pub struct DepthDownsampleParams {
-    pub depth_from: gpu::TextureView,
-    pub depth_from_sampler: gpu::Sampler,
-}
+// #[derive(blade_macros::ShaderData)]
+// pub struct DepthDownsampleParams {
+//     pub depth: gpu::TextureView,
+//     pub depth_from_sampler: gpu::Sampler,
+// }
 
 #[derive(blade_macros::Vertex, Debug)]
 pub struct Vertex {
@@ -78,8 +86,6 @@ pub struct Camera {
 }
 
 pub struct GBuffer {
-    // pub geometry_shader: gpu::Shader,
-    // pub geometry_pipeline: gpu::RenderPipeline,
     pub depth_textures: DepthTextures,
     pub pos_texture: gpu::Texture,
     pub normal_texture: gpu::Texture,
@@ -100,15 +106,81 @@ pub struct TextureStuff {
     pub size: gpu::Extent,
 }
 
+pub struct DepthPosNormalTexture {
+    pub depth: TextureStuff,
+    pub pos: TextureStuff,
+    pub normal: TextureStuff,
+}
+
+pub struct DownsampleTextures {
+    pub textures: Vec<DepthPosNormalTexture>,
+}
+
 pub struct DepthTextures {
     pub texture_stuffs: Vec<TextureStuff>,
 }
 
-pub fn create_depth_textures(ctx: &gpu::Context, screen_size: gpu::Extent) -> DepthTextures {
-    let mut texture_stuffs = vec![];
+// pub fn create_depth_textures(ctx: &gpu::Context, screen_size: gpu::Extent) -> DepthTextures {
+//     let mut texture_stuffs = vec![];
+//     let num_textures = 5;
+//     let mut width = screen_size.width;
+//     let mut height = screen_size.height;
+
+//     for i in 0..num_textures {
+//         let pow_2 = 1 << i;
+//         let width_i = width / pow_2;
+//         let height_i = height / pow_2;
+
+//         let extent_i = gpu::Extent {
+//             width: width_i,
+//             height: height_i,
+//             depth: 1,
+//         };
+
+//         let depth_texture_i = ctx.create_texture(gpu::TextureDesc {
+//             name: format!("depth texture {i}").as_str(),
+//             format: gpu::TextureFormat::Depth32Float,
+//             size: extent_i,
+//             array_layer_count: 1,
+//             mip_level_count: 1,
+//             dimension: gpu::TextureDimension::D2,
+//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+//         });
+//         let depth_view_i = ctx.create_texture_view(
+//             depth_texture_i,
+//             gpu::TextureViewDesc {
+//                 name: format!("depth view {i}").as_str(),
+//                 format: gpu::TextureFormat::Depth32Float,
+//                 dimension: gpu::ViewDimension::D2,
+//                 subresources: &Default::default(),
+//             },
+//         );
+//         let depth_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
+//             name: format!("depth sampler {i}").as_str(),
+//             // compare: Some(gpu::CompareFunction::LessEqual),
+//             ..Default::default()
+//         });
+
+//         let texture_stuff_i = TextureStuff {
+//             texture: depth_texture_i,
+//             view: depth_view_i,
+//             sampler: depth_sampler_i,
+//             size: extent_i,
+//         };
+//         texture_stuffs.push(texture_stuff_i);
+//     }
+
+//     DepthTextures { texture_stuffs }
+// }
+
+pub fn create_downsample_textures(
+    ctx: &gpu::Context,
+    screen_size: gpu::Extent,
+) -> DownsampleTextures {
+    let mut output = vec![];
     let num_textures = 5;
-    let mut width = screen_size.width;
-    let mut height = screen_size.height;
+    let width = screen_size.width;
+    let height = screen_size.height;
 
     for i in 0..num_textures {
         let pow_2 = 1 << i;
@@ -145,16 +217,93 @@ pub fn create_depth_textures(ctx: &gpu::Context, screen_size: gpu::Extent) -> De
             ..Default::default()
         });
 
-        let texture_stuff_i = TextureStuff {
+        let depth_stuff_i = TextureStuff {
             texture: depth_texture_i,
             view: depth_view_i,
             sampler: depth_sampler_i,
             size: extent_i,
         };
-        texture_stuffs.push(texture_stuff_i);
+
+        let pos_texture_i = ctx.create_texture(gpu::TextureDesc {
+            name: format!("pos texture {i}").as_str(),
+            format: gpu::TextureFormat::Rgba32Float,
+            size: extent_i,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let pos_view_i = ctx.create_texture_view(
+            pos_texture_i,
+            gpu::TextureViewDesc {
+                name: format!("pos view {i}").as_str(),
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let pos_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
+            name: format!("pos sampler {i}").as_str(),
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let pos_stuff_i = TextureStuff {
+            texture: pos_texture_i,
+            view: pos_view_i,
+            sampler: pos_sampler_i,
+            size: extent_i,
+        };
+
+        let normal_texture_i = ctx.create_texture(gpu::TextureDesc {
+            name: format!("normal texture {i}").as_str(),
+            format: gpu::TextureFormat::Rgba32Float,
+            size: extent_i,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let normal_view_i = ctx.create_texture_view(
+            normal_texture_i,
+            gpu::TextureViewDesc {
+                name: format!("normal view {i}").as_str(),
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let normal_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
+            name: format!("normal sampler {i}").as_str(),
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let normal_stuff_i = TextureStuff {
+            texture: normal_texture_i,
+            view: normal_view_i,
+            sampler: normal_sampler_i,
+            size: extent_i,
+        };
+
+        let depth_pos_normal_i = DepthPosNormalTexture {
+            depth: depth_stuff_i,
+            pos: pos_stuff_i,
+            normal: normal_stuff_i,
+        };
+
+        output.push(depth_pos_normal_i);
+        // texture_stuffs.push(texture_stuff_i);
     }
 
-    DepthTextures { texture_stuffs }
+    DownsampleTextures { textures: output }
+    // DepthTextures { texture_stuffs }
 }
 
 pub struct Pipelines {
@@ -203,7 +352,7 @@ impl Pipelines {
         // NOTE: pipeline
         let geometry_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "geometry",
-            data_layouts: &[&<Params as gpu::ShaderData>::layout()],
+            data_layouts: &[&<GeometryParams as gpu::ShaderData>::layout()],
             vertex: geometry_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
@@ -258,7 +407,7 @@ impl Pipelines {
         let light_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "light",
             // data_layouts: &[&<Params as gpu::ShaderData>::layout()],
-            data_layouts: &[&<LightParams as gpu::ShaderData>::layout()],
+            data_layouts: &[&<DepthPosNormalParams as gpu::ShaderData>::layout()],
             vertex: light_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
@@ -282,7 +431,7 @@ impl Pipelines {
 
         let depth_downsample_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "depth downsample",
-            data_layouts: &[&<DepthDownsampleParams as gpu::ShaderData>::layout()],
+            data_layouts: &[&<DepthPosNormalParams as gpu::ShaderData>::layout()],
             vertex: light_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
@@ -303,7 +452,18 @@ impl Pipelines {
                 bias: gpu::DepthBiasState::default(),
             }),
             fragment: light_shader.at("fs_downsample"),
-            color_targets: &[],
+            color_targets: &[
+                gpu::ColorTargetState {
+                    format: gpu::TextureFormat::Rgba32Float,
+                    blend: Some(gpu::BlendState::REPLACE),
+                    write_mask: gpu::ColorWrites::default(),
+                },
+                gpu::ColorTargetState {
+                    format: gpu::TextureFormat::Rgba32Float,
+                    blend: Some(gpu::BlendState::REPLACE),
+                    write_mask: gpu::ColorWrites::default(),
+                },
+            ],
         });
 
         let last_modified = last_time_shader_modified();
@@ -361,106 +521,107 @@ impl Pipelines {
     // }
 }
 
-impl GBuffer {
-    pub fn new(ctx: &gpu::Context, width: u32, height: u32) -> Self {
-        let extent = gpu::Extent {
-            width,
-            height,
-            depth: 1,
-        };
+// impl GBuffer {
+//     pub fn new(ctx: &gpu::Context, width: u32, height: u32) -> Self {
+//         let extent = gpu::Extent {
+//             width,
+//             height,
+//             depth: 1,
+//         };
 
-        dbg!(extent);
-        let depth_texture = ctx.create_texture(gpu::TextureDesc {
-            name: "depth texture",
-            format: gpu::TextureFormat::Depth32Float,
-            size: extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            dimension: gpu::TextureDimension::D2,
-            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-        });
-        let depth_view = ctx.create_texture_view(
-            depth_texture,
-            gpu::TextureViewDesc {
-                name: "depth view",
-                format: gpu::TextureFormat::Depth32Float,
-                dimension: gpu::ViewDimension::D2,
-                subresources: &Default::default(),
-            },
-        );
-        let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
-            name: "depth sampler",
-            // compare: Some(gpu::CompareFunction::LessEqual),
-            ..Default::default()
-        });
+//         dbg!(extent);
+//         let depth_texture = ctx.create_texture(gpu::TextureDesc {
+//             name: "depth texture",
+//             format: gpu::TextureFormat::Depth32Float,
+//             size: extent,
+//             array_layer_count: 1,
+//             mip_level_count: 1,
+//             dimension: gpu::TextureDimension::D2,
+//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+//         });
+//         let depth_view = ctx.create_texture_view(
+//             depth_texture,
+//             gpu::TextureViewDesc {
+//                 name: "depth view",
+//                 format: gpu::TextureFormat::Depth32Float,
+//                 dimension: gpu::ViewDimension::D2,
+//                 subresources: &Default::default(),
+//             },
+//         );
+//         let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
+//             name: "depth sampler",
+//             // compare: Some(gpu::CompareFunction::LessEqual),
+//             ..Default::default()
+//         });
 
-        let pos_texture = ctx.create_texture(gpu::TextureDesc {
-            name: "pos texture",
-            format: gpu::TextureFormat::Rgba32Float,
-            size: extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            dimension: gpu::TextureDimension::D2,
-            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-        });
-        let pos_view = ctx.create_texture_view(
-            pos_texture,
-            gpu::TextureViewDesc {
-                name: "pos view",
-                format: gpu::TextureFormat::Rgba32Float,
-                dimension: gpu::ViewDimension::D2,
-                subresources: &Default::default(),
-            },
-        );
-        let pos_sampler = ctx.create_sampler(gpu::SamplerDesc {
-            name: "pos sampler",
-            address_modes: Default::default(),
-            mag_filter: gpu::FilterMode::Nearest,
-            min_filter: gpu::FilterMode::Nearest,
-            mipmap_filter: gpu::FilterMode::Nearest,
-            ..Default::default()
-        });
+//         let pos_texture = ctx.create_texture(gpu::TextureDesc {
+//             name: "pos texture",
+//             format: gpu::TextureFormat::Rgba32Float,
+//             size: extent,
+//             array_layer_count: 1,
+//             mip_level_count: 1,
+//             dimension: gpu::TextureDimension::D2,
+//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+//         });
+//         let pos_view = ctx.create_texture_view(
+//             pos_texture,
+//             gpu::TextureViewDesc {
+//                 name: "pos view",
+//                 format: gpu::TextureFormat::Rgba32Float,
+//                 dimension: gpu::ViewDimension::D2,
+//                 subresources: &Default::default(),
+//             },
+//         );
+//         let pos_sampler = ctx.create_sampler(gpu::SamplerDesc {
+//             name: "pos sampler",
+//             address_modes: Default::default(),
+//             mag_filter: gpu::FilterMode::Nearest,
+//             min_filter: gpu::FilterMode::Nearest,
+//             mipmap_filter: gpu::FilterMode::Nearest,
+//             ..Default::default()
+//         });
 
-        let normal_texture = ctx.create_texture(gpu::TextureDesc {
-            name: "normal texture",
-            format: gpu::TextureFormat::Rgba32Float,
-            size: extent,
-            array_layer_count: 1,
-            mip_level_count: 1,
-            dimension: gpu::TextureDimension::D2,
-            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-        });
-        let normal_view = ctx.create_texture_view(
-            normal_texture,
-            gpu::TextureViewDesc {
-                name: "normal view",
-                format: gpu::TextureFormat::Rgba32Float,
-                dimension: gpu::ViewDimension::D2,
-                subresources: &Default::default(),
-            },
-        );
-        let normal_sampler = ctx.create_sampler(gpu::SamplerDesc {
-            name: "normal sampler",
-            address_modes: Default::default(),
-            mag_filter: gpu::FilterMode::Nearest,
-            min_filter: gpu::FilterMode::Nearest,
-            mipmap_filter: gpu::FilterMode::Nearest,
-            ..Default::default()
-        });
+//         let normal_texture = ctx.create_texture(gpu::TextureDesc {
+//             name: "normal texture",
+//             format: gpu::TextureFormat::Rgba32Float,
+//             size: extent,
+//             array_layer_count: 1,
+//             mip_level_count: 1,
+//             dimension: gpu::TextureDimension::D2,
+//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+//         });
+//         let normal_view = ctx.create_texture_view(
+//             normal_texture,
+//             gpu::TextureViewDesc {
+//                 name: "normal view",
+//                 format: gpu::TextureFormat::Rgba32Float,
+//                 dimension: gpu::ViewDimension::D2,
+//                 subresources: &Default::default(),
+//             },
+//         );
+//         let normal_sampler = ctx.create_sampler(gpu::SamplerDesc {
+//             name: "normal sampler",
+//             address_modes: Default::default(),
+//             mag_filter: gpu::FilterMode::Nearest,
+//             min_filter: gpu::FilterMode::Nearest,
+//             mipmap_filter: gpu::FilterMode::Nearest,
+//             ..Default::default()
+//         });
 
-        let depth_textures = create_depth_textures(ctx, extent);
-        let gbuffer = GBuffer {
-            pos_texture,
-            normal_texture,
-            pos_view,
-            normal_view,
-            pos_sampler,
-            normal_sampler,
-            depth_textures,
-        };
-        gbuffer
-    }
-}
+//         // let depth_textures = create_depth_textures(ctx, extent);
+//         let downsample_textures = create_downsample_textures(ctx, extent)
+//         let gbuffer = GBuffer {
+//             pos_texture,
+//             normal_texture,
+//             pos_view,
+//             normal_view,
+//             pos_sampler,
+//             normal_sampler,
+//             depth_textures,
+//         };
+//         gbuffer
+//     }
+// }
 
 pub struct State {
     // pub light_pipeline: gpu::RenderPipeline,
@@ -472,8 +633,9 @@ pub struct State {
     pub meshes: Vec<Mesh>,
     pub camera: Camera,
     pub retained_input: RetainedInput,
-    pub g_buffer: GBuffer,
+    // pub g_buffer: GBuffer,
     pub screen_quad_buf: gpu::BufferPiece,
+    pub downsample_textures: DownsampleTextures,
     // pub depth_textures: DepthTextures,
 }
 
@@ -540,7 +702,7 @@ impl State {
 
         let depth_sampler = ctx.create_sampler(gpu::SamplerDesc {
             name: "depth sampler",
-            compare: Some(gpu::CompareFunction::Less),
+            compare: Some(gpu::CompareFunction::LessEqual),
             ..Default::default()
         });
 
@@ -552,7 +714,7 @@ impl State {
         let light_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "light",
             // data_layouts: &[&<Params as gpu::ShaderData>::layout()],
-            data_layouts: &[&<LightParams as gpu::ShaderData>::layout()],
+            data_layouts: &[&<DepthPosNormalParams as gpu::ShaderData>::layout()],
             vertex: light_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
@@ -618,7 +780,15 @@ impl State {
         meshes.clear();
         meshes.push(gpu_sponza);
 
-        let g_buffer = GBuffer::new(&ctx, width, height);
+        // let g_buffer = GBuffer::new(&ctx, width, height);
+
+        let screen_size = gpu::Extent {
+            width,
+            height,
+            depth: 1,
+        };
+
+        let downsample_textures = create_downsample_textures(&ctx, screen_size);
 
         let screen_quad_vertices = [
             vec3(-1.0, -1.0, 0.0),
@@ -659,24 +829,35 @@ impl State {
             meshes,
             camera: Camera::default_from_aspect(aspect),
             retained_input: Default::default(),
-            g_buffer,
             screen_quad_buf: screen_quad_buf.into(),
             // depth_textures,
             pipelines,
+            downsample_textures,
         }
     }
 
-    pub fn render_depth_downsamples(&mut self) {
-        for i in 1..self.g_buffer.depth_textures.texture_stuffs.len() {
-            let texture_from = &self.g_buffer.depth_textures.texture_stuffs[i - 1];
-            let texture_to = &self.g_buffer.depth_textures.texture_stuffs[i];
+    pub fn render_downsample(&mut self) {
+        for i in 1..self.downsample_textures.textures.len() {
+            let textures_from = &self.downsample_textures.textures[i - 1];
+            let textures_to = &self.downsample_textures.textures[i];
 
             if let mut depth_downsample_pass = self.command_encoder.render(
                 format!("depth downsample {i}").as_str(),
                 gpu::RenderTargetSet {
-                    colors: &[],
+                    colors: &[
+                        gpu::RenderTarget {
+                            view: textures_to.pos.view,
+                            init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+                            finish_op: gpu::FinishOp::Store,
+                        },
+                        gpu::RenderTarget {
+                            view: textures_to.normal.view,
+                            init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+                            finish_op: gpu::FinishOp::Store,
+                        },
+                    ],
                     depth_stencil: Some(gpu::RenderTarget {
-                        view: texture_to.view,
+                        view: textures_to.depth.view,
                         init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                         finish_op: gpu::FinishOp::Store,
                     }),
@@ -685,48 +866,49 @@ impl State {
                 let mut rc = depth_downsample_pass.with(&self.pipelines.depth_downsample);
                 rc.bind(
                     0,
-                    &DepthDownsampleParams {
-                        depth_from: texture_from.view,
-                        depth_from_sampler: texture_from.sampler,
+                    &DepthPosNormalParams {
+                        depth_view: textures_from.depth.view,
+                        depth_sampler: textures_from.depth.sampler,
+                        pos_view: textures_from.pos.view,
+                        pos_sampler: textures_from.pos.sampler,
+                        normal_view: textures_from.normal.view,
+                        normal_sampler: textures_from.normal.sampler,
                     },
                 );
                 rc.bind_vertex(0, self.screen_quad_buf);
                 let num_quad_vertices = 6;
                 rc.draw(0, num_quad_vertices as _, 0, 1);
             }
-
-            // self.command_encoder.present(frame);
         }
     }
 
     pub fn render(&mut self) {
         self.command_encoder.start();
-
-        self.command_encoder.init_texture(self.g_buffer.pos_texture);
-        self.command_encoder
-            .init_texture(self.g_buffer.normal_texture);
-        for d in self.g_buffer.depth_textures.texture_stuffs.iter() {
-            self.command_encoder.init_texture(d.texture);
+        for texture in self.downsample_textures.textures.iter() {
+            self.command_encoder.init_texture(texture.depth.texture);
+            self.command_encoder.init_texture(texture.pos.texture);
+            self.command_encoder.init_texture(texture.normal.texture);
         }
 
-        let depth_texture_stuff = &self.g_buffer.depth_textures.texture_stuffs[0];
+        let textures_for_geometry_pass = &self.downsample_textures.textures[0];
+
         if let mut geometry_pass = self.command_encoder.render(
             "geometry",
             gpu::RenderTargetSet {
                 colors: &[
                     gpu::RenderTarget {
-                        view: self.g_buffer.pos_view,
+                        view: textures_for_geometry_pass.pos.view,
                         init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                         finish_op: gpu::FinishOp::Store,
                     },
                     gpu::RenderTarget {
-                        view: self.g_buffer.normal_view,
+                        view: textures_for_geometry_pass.normal.view,
                         init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                         finish_op: gpu::FinishOp::Store,
                     },
                 ],
                 depth_stencil: Some(gpu::RenderTarget {
-                    view: depth_texture_stuff.view,
+                    view: textures_for_geometry_pass.depth.view,
                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                     finish_op: gpu::FinishOp::Store,
                 }),
@@ -734,17 +916,18 @@ impl State {
         ) {
             let mut rc = geometry_pass.with(&self.pipelines.geometry);
 
+            let textures_for_geometry_pass = &self.downsample_textures.textures[0];
             rc.bind(
                 0,
-                &Params {
+                &GeometryParams {
                     globals: Globals {
                         mvp_transform: self.camera.vp().to_cols_array_2d(),
                         cam_pos: self.camera.pos.to_array(),
                         cam_dir: self.camera.right_forward_up()[1].to_array(),
                         pad: [0; 2],
                     },
-                    depth_view: depth_texture_stuff.view,
-                    depth_sampler: depth_texture_stuff.sampler,
+                    depth_view: textures_for_geometry_pass.depth.view,
+                    depth_sampler: textures_for_geometry_pass.depth.sampler,
                 },
             );
 
@@ -754,10 +937,12 @@ impl State {
             }
         }
 
-        self.render_depth_downsamples();
+        self.render_downsample();
+
+        let textures_for_light_pass = &self.downsample_textures.textures[0];
+        let depth = &self.downsample_textures.textures.last().unwrap().depth;
         let frame = self.surface.acquire_frame();
         self.command_encoder.init_texture(frame.texture());
-        let depth_texture_stuff = &self.g_buffer.depth_textures.texture_stuffs[0];
         if let mut light_pass = self.command_encoder.render(
             "light",
             gpu::RenderTargetSet {
@@ -772,15 +957,13 @@ impl State {
             let mut rc = light_pass.with(&self.pipelines.light);
             rc.bind(
                 0,
-                &LightParams {
-                    pos_view: self.g_buffer.pos_view,
-                    pos_sampler: self.g_buffer.pos_sampler,
-                    normal_view: self.g_buffer.normal_view,
-                    normal_sampler: self.g_buffer.normal_sampler,
-                    depth_view: depth_texture_stuff.view,
-                    depth_sampler: depth_texture_stuff.sampler,
-                    // near: todo!(),
-                    // far: todo!(),
+                &DepthPosNormalParams {
+                    pos_view: textures_for_light_pass.pos.view,
+                    pos_sampler: textures_for_light_pass.pos.sampler,
+                    normal_view: textures_for_light_pass.normal.view,
+                    normal_sampler: textures_for_light_pass.normal.sampler,
+                    depth_view: depth.view,
+                    depth_sampler: depth.sampler,
                 },
             );
             rc.bind_vertex(0, self.screen_quad_buf);

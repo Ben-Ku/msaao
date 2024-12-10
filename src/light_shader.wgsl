@@ -3,18 +3,18 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
 };
 
+var depth_view: texture_depth_2d;
+var depth_sampler: sampler;
+
 var pos_view: texture_2d<f32>;
 var pos_sampler: sampler;
 
 var normal_view: texture_2d<f32>;
 var normal_sampler: sampler;
 
-var depth_view: texture_depth_2d;
-var depth_sampler: sampler;
 
 
-var depth_from: texture_depth_2d;
-var depth_from_sampler: sampler;
+
 
 struct Vertex {
     pos: vec3<f32>,
@@ -29,16 +29,52 @@ fn linearize_depth(d: f32) -> f32
 }
 
 
+
+struct DownSampleOutput {
+    @builtin(frag_depth) depth: f32,
+    @location(0) pos: vec4<f32>,
+    @location(1) normal: vec4<f32>
+};
+
+
 @fragment
-fn fs_downsample(vertex: VertexOutput) -> @builtin(frag_depth) f32 {
-    let depth = textureSample(depth_from, depth_from_sampler, vertex.uv);
-    return depth;
+fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
+    let depth = textureSample(depth_view, depth_sampler, vertex.uv);
+    let subpixel_depths = textureGather(depth_view, depth_sampler, vertex.uv);
+
+    var x = subpixel_depths.x;
+    var y = subpixel_depths.y;
+    var z = subpixel_depths.z;
+    var w = subpixel_depths.w;
+
+    let max_xy = max(x,y);
+    let min_xy = min(x,y);
+
+    let max_zw = max(z,w);
+    let min_zw = min(z,w);
+
+    let max_xyzw = max(max_xy, max_zw);
+    let min_xyzw = min(min_xy, min_zw);
+
+    let d0 = min_xyzw;
+    let d3 = max_xyzw;
+
+    let d_thresh = 0.1;
+
+    // if d3 - d0  > d_thresh {
+                
+    // }
+
+    let output = DownSampleOutput(depth, vec4(0.0), vec4(0.0));
+    
+    return output;
 }
 
 @vertex
 fn vs_main(vertex: Vertex) -> VertexOutput {
     var uv = 0.5*vertex.pos.xy + 0.5;
     uv.y = 1.0 - uv.y;
+
 
     return VertexOutput(vec4(vertex.pos,1.0), uv);
 }
