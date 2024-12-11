@@ -1,7 +1,3 @@
-struct VertexOutput {
-    @builtin(position) clip_pos: vec4<f32>,
-    @location(0) uv: vec2<f32>,
-};
 
 var depth_view: texture_depth_2d;
 var depth_sampler: sampler;
@@ -11,6 +7,9 @@ var pos_sampler: sampler;
 
 var normal_view: texture_2d<f32>;
 var normal_sampler: sampler;
+
+var prev_ao_view: texture_2d<f32>;
+var prev_ao_sampler: sampler;
 
 var<uniform> globals: Globals;
 
@@ -22,6 +21,7 @@ struct Globals {
     cam_pos: vec3<f32>,
     cam_dir: vec3<f32>,
 };
+
 
 
 
@@ -124,15 +124,19 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
     return output;
 }
 
-@vertex
-fn vs_main(vertex: Vertex) -> VertexOutput {
-    // NOTE: ws pos equal to uv coords since vertex belongs to screen covering quad
-    var uv = 0.5 * vertex.ws_pos.xy + 0.5;
-    uv.y = 1.0 - uv.y;
 
+@fragment
+fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
+    // NOTE: kernel size
+    var ri = 5.0;
+    // ri = ri / pow(2.0, i)
 
-    return VertexOutput(vec4(vertex.ws_pos,1.0), uv);
+    var AOnear = 0.0;
+    let c = vec3(1.0);
+
+    return vec4(c, 1.0);
 }
+
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let view_pos = textureSample(pos_view, pos_sampler, vertex.uv);
@@ -158,6 +162,21 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     depth = linearize_depth(depth);
     let a = -vec3(view_pos.z) / 10.0;
 
-    return vec4(a, 1.0);
-    // return vec4(c, 1.0);
+    // return vec4(a, 1.0);
+    return vec4(c, 1.0);
+}
+
+struct VertexOutput {
+    @builtin(position) clip_pos: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(vertex: Vertex) -> VertexOutput {
+    // NOTE: ws pos equal to uv coords since vertex belongs to screen covering quad
+    var uv = 0.5 * vertex.ws_pos.xy + 0.5;
+    uv.y = 1.0 - uv.y;
+
+
+    return VertexOutput(vec4(vertex.ws_pos,1.0), uv);
 }

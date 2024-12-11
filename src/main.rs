@@ -9,6 +9,8 @@ pub use glam::*;
 pub const PI: f32 = 3.14159265358979323846264338327950288;
 pub const TAU: f32 = 2.0 * PI;
 
+pub const NUM_AO_TEXTURES: usize = 5;
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct Globals {
@@ -50,6 +52,19 @@ pub struct DepthPosNormalParams {
 
     pub normal_view: gpu::TextureView,
     pub normal_sampler: gpu::Sampler,
+}
+
+#[derive(blade_macros::ShaderData)]
+pub struct PosNormalPrevAOParams {
+    pub globals: Globals,
+    pub pos_view: gpu::TextureView,
+    pub pos_sampler: gpu::Sampler,
+
+    pub normal_view: gpu::TextureView,
+    pub normal_sampler: gpu::Sampler,
+
+    pub prev_ao_view: gpu::TextureView,
+    pub prev_ao_sampler: gpu::Sampler,
 }
 
 // #[derive(blade_macros::ShaderData)]
@@ -115,73 +130,26 @@ pub struct DownsampleTextures {
     pub textures: Vec<DepthPosNormalTexture>,
 }
 
+pub struct AOTextures {
+    pub textures: Vec<TextureStuff>,
+    pub dummy_texture: TextureStuff,
+}
+
 pub struct DepthTextures {
     pub texture_stuffs: Vec<TextureStuff>,
 }
 
-// pub fn create_depth_textures(ctx: &gpu::Context, screen_size: gpu::Extent) -> DepthTextures {
-//     let mut texture_stuffs = vec![];
-//     let num_textures = 5;
-//     let mut width = screen_size.width;
-//     let mut height = screen_size.height;
-
-//     for i in 0..num_textures {
-//         let pow_2 = 1 << i;
-//         let width_i = width / pow_2;
-//         let height_i = height / pow_2;
-
-//         let extent_i = gpu::Extent {
-//             width: width_i,
-//             height: height_i,
-//             depth: 1,
-//         };
-
-//         let depth_texture_i = ctx.create_texture(gpu::TextureDesc {
-//             name: format!("depth texture {i}").as_str(),
-//             format: gpu::TextureFormat::Depth32Float,
-//             size: extent_i,
-//             array_layer_count: 1,
-//             mip_level_count: 1,
-//             dimension: gpu::TextureDimension::D2,
-//             usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
-//         });
-//         let depth_view_i = ctx.create_texture_view(
-//             depth_texture_i,
-//             gpu::TextureViewDesc {
-//                 name: format!("depth view {i}").as_str(),
-//                 format: gpu::TextureFormat::Depth32Float,
-//                 dimension: gpu::ViewDimension::D2,
-//                 subresources: &Default::default(),
-//             },
-//         );
-//         let depth_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
-//             name: format!("depth sampler {i}").as_str(),
-//             // compare: Some(gpu::CompareFunction::LessEqual),
-//             ..Default::default()
-//         });
-
-//         let texture_stuff_i = TextureStuff {
-//             texture: depth_texture_i,
-//             view: depth_view_i,
-//             sampler: depth_sampler_i,
-//             size: extent_i,
-//         };
-//         texture_stuffs.push(texture_stuff_i);
-//     }
-
-//     DepthTextures { texture_stuffs }
-// }
-
-pub fn create_downsample_textures(
+pub fn create_downsample_and_ao_textures(
     ctx: &gpu::Context,
     screen_size: gpu::Extent,
-) -> DownsampleTextures {
-    let mut output = vec![];
-    let num_textures = 5;
+) -> (DownsampleTextures, AOTextures) {
+    let mut depth_pos_normal_textures = vec![];
+    let mut ao_textures = vec![];
+
     let width = screen_size.width;
     let height = screen_size.height;
 
-    for i in 0..num_textures {
+    for i in 0..NUM_AO_TEXTURES {
         let pow_2 = 1 << i;
         let width_i = width / pow_2;
         let height_i = height / pow_2;
@@ -297,12 +265,96 @@ pub fn create_downsample_textures(
             normal: normal_stuff_i,
         };
 
-        output.push(depth_pos_normal_i);
-        // texture_stuffs.push(texture_stuff_i);
+        depth_pos_normal_textures.push(depth_pos_normal_i);
+
+        //NOTE: ao texture
+        // if i < num_textures - 1 {}
+        let ao_texture_i = ctx.create_texture(gpu::TextureDesc {
+            name: format!("ao texture {i}").as_str(),
+            format: gpu::TextureFormat::Rgba32Float,
+            size: extent_i,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let ao_view_i = ctx.create_texture_view(
+            ao_texture_i,
+            gpu::TextureViewDesc {
+                name: format!("ao view {i}").as_str(),
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let ao_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
+            name: format!("ao sampler {i}").as_str(),
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let ao_texture_stuff_i = TextureStuff {
+            texture: ao_texture_i,
+            view: ao_view_i,
+            sampler: ao_sampler_i,
+            size: extent_i,
+        };
+
+        ao_textures.push(ao_texture_stuff_i);
     }
 
-    DownsampleTextures { textures: output }
-    // DepthTextures { texture_stuffs }
+    let ao_dummy_texture = {
+        let dummy_extent = gpu::Extent {
+            width: 1,
+            height: 1,
+            depth: 1,
+        };
+        let ao_texture_dummy = ctx.create_texture(gpu::TextureDesc {
+            name: format!("ao texture dummy").as_str(),
+            format: gpu::TextureFormat::Rgba32Float,
+            size: dummy_extent,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let ao_view_dummy = ctx.create_texture_view(
+            ao_texture_dummy,
+            gpu::TextureViewDesc {
+                name: format!("ao view dummy").as_str(),
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let ao_sampler_dummy = ctx.create_sampler(gpu::SamplerDesc {
+            name: format!("ao sampler dummy").as_str(),
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        TextureStuff {
+            texture: ao_texture_dummy,
+            view: ao_view_dummy,
+            sampler: ao_sampler_dummy,
+            size: dummy_extent,
+        }
+    };
+
+    let downsample_textures = DownsampleTextures {
+        textures: depth_pos_normal_textures,
+    };
+    let ao_textures = AOTextures {
+        textures: ao_textures,
+        dummy_texture: ao_dummy_texture,
+    };
+
+    (downsample_textures, ao_textures)
 }
 
 pub struct Pipelines {
@@ -311,6 +363,7 @@ pub struct Pipelines {
     pub geometry: gpu::RenderPipeline,
     pub light: gpu::RenderPipeline,
     pub depth_downsample: gpu::RenderPipeline,
+    pub calc_ao: gpu::RenderPipeline,
 }
 
 pub fn last_time_shader_modified() -> std::time::SystemTime {
@@ -465,6 +518,32 @@ impl Pipelines {
             ],
         });
 
+        let ao_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
+            name: "ao",
+            // TODO: fix daat layot
+            data_layouts: &[&<PosNormalPrevAOParams as gpu::ShaderData>::layout()],
+            // data_layouts: &[],
+            vertex: light_shader.at("vs_main"),
+            vertex_fetches: &[gpu::VertexFetchState {
+                layout: &<Vertex as gpu::Vertex>::layout(),
+                instanced: false,
+            }],
+            primitive: gpu::PrimitiveState {
+                topology: gpu::PrimitiveTopology::TriangleList,
+                front_face: gpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                wireframe: false,
+            },
+            depth_stencil: None,
+            fragment: light_shader.at("fs_calc_ao"),
+            color_targets: &[gpu::ColorTargetState {
+                format: gpu::TextureFormat::Rgba32Float,
+                blend: Some(gpu::BlendState::REPLACE),
+                write_mask: gpu::ColorWrites::default(),
+            }],
+        });
+
         let last_modified = last_time_shader_modified();
         // let metadata = std::fs::Metadata:
         Some(Self {
@@ -472,6 +551,7 @@ impl Pipelines {
             light: light_pipeline,
             depth_downsample: depth_downsample_pipeline,
             last_modified_shader_time: last_modified,
+            calc_ao: ao_pipeline,
         })
     }
 }
@@ -487,6 +567,7 @@ pub struct State {
     pub retained_input: RetainedInput,
     pub screen_quad_buf: gpu::BufferPiece,
     pub downsample_textures: DownsampleTextures,
+    pub ao_textures: AOTextures,
 }
 
 #[derive(Default)]
@@ -552,7 +633,8 @@ impl State {
             depth: 1,
         };
 
-        let downsample_textures = create_downsample_textures(&ctx, screen_size);
+        let (downsample_textures, ao_textures) =
+            create_downsample_and_ao_textures(&ctx, screen_size);
 
         let screen_quad_vertices = [
             vec3(-1.0, -1.0, 0.0),
@@ -594,14 +676,14 @@ impl State {
             camera: Camera::default_from_aspect(aspect),
             retained_input: Default::default(),
             screen_quad_buf: screen_quad_buf.into(),
-            // depth_textures,
             pipelines,
             downsample_textures,
+            ao_textures,
         }
     }
 
     pub fn render_downsample(&mut self) {
-        for i in 1..self.downsample_textures.textures.len() {
+        for i in 1..NUM_AO_TEXTURES {
             let textures_from = &self.downsample_textures.textures[i - 1];
             let textures_to = &self.downsample_textures.textures[i];
 
@@ -654,12 +736,69 @@ impl State {
         }
     }
 
+    pub fn render_calc_ao(&mut self) {
+        for i in (0..NUM_AO_TEXTURES).rev() {
+            let ao_target = &self.ao_textures.textures[i];
+
+            let ao_prev = &self.ao_textures.textures[i];
+            if let mut calc_ao_pass = self.command_encoder.render(
+                format!("calc ao {i}").as_str(),
+                gpu::RenderTargetSet {
+                    colors: &[gpu::RenderTarget {
+                        view: ao_target.view,
+                        init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+                        finish_op: gpu::FinishOp::Store,
+                    }],
+                    depth_stencil: None,
+                },
+            ) {
+                // NOTE: these textures have same size as render target
+                let dnp = &self.downsample_textures.textures[i];
+                let mut rc = calc_ao_pass.with(&self.pipelines.calc_ao);
+
+                let prev_ao_texture = if i == NUM_AO_TEXTURES - 1 {
+                    &self.ao_textures.dummy_texture
+                } else {
+                    &self.ao_textures.textures[i + 1]
+                };
+                rc.bind(
+                    0,
+                    &PosNormalPrevAOParams {
+                        globals: Globals {
+                            mvp_transform: self.camera.vp().to_cols_array_2d(),
+                            mv_transform: self.camera.view().to_cols_array_2d(),
+                            cam_pos: self.camera.pos.to_array(),
+                            cam_dir: self.camera.right_forward_up()[1].to_array(),
+                            pad: [0; 2],
+                            mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
+                        },
+
+                        pos_view: dnp.pos.view,
+                        pos_sampler: dnp.pos.sampler,
+
+                        normal_view: dnp.normal.view,
+                        normal_sampler: dnp.normal.sampler,
+
+                        prev_ao_view: prev_ao_texture.view,
+                        prev_ao_sampler: prev_ao_texture.sampler,
+                    },
+                );
+            }
+        }
+    }
+
+    // pub fn render_upsample(&mut self) {}
+
     pub fn render(&mut self) {
         self.command_encoder.start();
         for texture in self.downsample_textures.textures.iter() {
             self.command_encoder.init_texture(texture.depth.texture);
             self.command_encoder.init_texture(texture.pos.texture);
             self.command_encoder.init_texture(texture.normal.texture);
+        }
+
+        for t in self.ao_textures.textures.iter() {
+            self.command_encoder.init_texture(t.texture);
         }
 
         let textures_for_geometry_pass = &self.downsample_textures.textures[0];
@@ -712,6 +851,7 @@ impl State {
         }
 
         self.render_downsample();
+        self.render_calc_ao();
 
         let textures_for_light_pass = &self.downsample_textures.textures[0];
         // let textures_for_light_pass = &self.downsample_textures.textures.last().unwrap();
