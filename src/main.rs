@@ -22,6 +22,45 @@ pub struct Globals {
     pad: [u32; 2],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct AOParams {
+    pub is_first_pass: u32,
+    pub is_last_pass: u32,
+    pub ri_almost: f32,
+    pub ao_width: f32,
+
+    pub pad: [u32; 3],
+    pub ao_height: f32,
+}
+
+impl AOParams {
+    pub fn from(
+        is_first_pass: bool,
+        is_last_pass: bool,
+        pass_i: usize,
+        d_max: f32,
+        fov_y: f32,
+        ao_width: u32,
+        ao_height: u32,
+    ) -> Self {
+        let s = ao_height as f32;
+        let a = fov_y;
+        // NOTE: eq (5) in reference paper, we need to divide by depth of specific pixel in shader tog get exact value
+        let r0_almost = s * d_max / (2.0 * (a / 2.0).tan());
+        let ri_almost = r0_almost / ((1 << pass_i) as f32);
+        let ri_almost = ri_almost;
+        Self {
+            is_first_pass: is_first_pass as _,
+            is_last_pass: is_last_pass as _,
+            ri_almost,
+            pad: Default::default(),
+            ao_width: ao_width as f32,
+            ao_height: ao_height as f32,
+        }
+    }
+}
+
 #[derive(blade_macros::ShaderData)]
 pub struct GeometryParams {
     pub globals: Globals,
@@ -55,6 +94,22 @@ pub struct DepthPosNormalParams {
 }
 
 #[derive(blade_macros::ShaderData)]
+pub struct LightPassParams {
+    pub globals: Globals,
+    pub depth_view: gpu::TextureView,
+    pub depth_sampler: gpu::Sampler,
+
+    pub pos_view: gpu::TextureView,
+    pub pos_sampler: gpu::Sampler,
+
+    pub normal_view: gpu::TextureView,
+    pub normal_sampler: gpu::Sampler,
+
+    pub ao_view: gpu::TextureView,
+    pub ao_sampler: gpu::Sampler,
+}
+
+#[derive(blade_macros::ShaderData)]
 pub struct PosNormalPrevAOParams {
     pub globals: Globals,
     pub pos_view: gpu::TextureView,
@@ -65,6 +120,10 @@ pub struct PosNormalPrevAOParams {
 
     pub prev_ao_view: gpu::TextureView,
     pub prev_ao_sampler: gpu::Sampler,
+
+    pub ao_params: AOParams,
+    // pub is_first_pass: u32,
+    // pub pad: [u32; 3],
 }
 
 // #[derive(blade_macros::ShaderData)]
@@ -95,7 +154,7 @@ pub struct Camera {
     pub pos: Vec3A,
     pub yaw: f32,
     pub pitch: f32,
-    pub fov_rad: f32,
+    pub vfov_rad: f32,
     pub aspect: f32,
 }
 
@@ -104,11 +163,9 @@ pub struct GBuffer {
     pub pos_texture: gpu::Texture,
     pub normal_texture: gpu::Texture,
 
-    // pub depth_view: gpu::TextureView,
     pub pos_view: gpu::TextureView,
     pub normal_view: gpu::TextureView,
 
-    // pub depth_sampler: gpu::Sampler,
     pub pos_sampler: gpu::Sampler,
     pub normal_sampler: gpu::Sampler,
 }
@@ -459,7 +516,7 @@ impl Pipelines {
         let light_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "light",
             // data_layouts: &[&<Params as gpu::ShaderData>::layout()],
-            data_layouts: &[&<DepthPosNormalParams as gpu::ShaderData>::layout()],
+            data_layouts: &[&<LightPassParams as gpu::ShaderData>::layout()],
             vertex: light_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
                 layout: &<Vertex as gpu::Vertex>::layout(),
@@ -473,7 +530,7 @@ impl Pipelines {
                 wireframe: false,
             },
             depth_stencil: None,
-            fragment: light_shader.at("fs_main"),
+            fragment: light_shader.at("fs_light"),
             color_targets: &[gpu::ColorTargetState {
                 format: surface.info().format,
                 blend: Some(gpu::BlendState::REPLACE),
@@ -739,8 +796,15 @@ impl State {
     pub fn render_calc_ao(&mut self) {
         for i in (0..NUM_AO_TEXTURES).rev() {
             let ao_target = &self.ao_textures.textures[i];
+            let is_first_pass = i == NUM_AO_TEXTURES - 1;
+            let is_last_pass = i == 0;
 
-            let ao_prev = &self.ao_textures.textures[i];
+            let ao_prev = if is_first_pass {
+                &self.ao_textures.dummy_texture
+            } else {
+                &self.ao_textures.textures[i + 1]
+            };
+
             if let mut calc_ao_pass = self.command_encoder.render(
                 format!("calc ao {i}").as_str(),
                 gpu::RenderTargetSet {
@@ -756,11 +820,6 @@ impl State {
                 let dnp = &self.downsample_textures.textures[i];
                 let mut rc = calc_ao_pass.with(&self.pipelines.calc_ao);
 
-                let prev_ao_texture = if i == NUM_AO_TEXTURES - 1 {
-                    &self.ao_textures.dummy_texture
-                } else {
-                    &self.ao_textures.textures[i + 1]
-                };
                 rc.bind(
                     0,
                     &PosNormalPrevAOParams {
@@ -779,10 +838,23 @@ impl State {
                         normal_view: dnp.normal.view,
                         normal_sampler: dnp.normal.sampler,
 
-                        prev_ao_view: prev_ao_texture.view,
-                        prev_ao_sampler: prev_ao_texture.sampler,
+                        prev_ao_view: ao_prev.view,
+                        prev_ao_sampler: ao_prev.sampler,
+
+                        ao_params: AOParams::from(
+                            is_first_pass,
+                            is_last_pass,
+                            i,
+                            1.0,
+                            self.camera.vfov_rad,
+                            ao_target.size.width,
+                            ao_target.size.height,
+                        ),
                     },
                 );
+                rc.bind_vertex(0, self.screen_quad_buf);
+                let num_quad_vertices = 6;
+                rc.draw(0, num_quad_vertices as _, 0, 1);
             }
         }
     }
@@ -800,6 +872,8 @@ impl State {
         for t in self.ao_textures.textures.iter() {
             self.command_encoder.init_texture(t.texture);
         }
+        self.command_encoder
+            .init_texture(self.ao_textures.dummy_texture.texture);
 
         let textures_for_geometry_pass = &self.downsample_textures.textures[0];
 
@@ -869,9 +943,11 @@ impl State {
             },
         ) {
             let mut rc = light_pass.with(&self.pipelines.light);
+            let ao_texture = &self.ao_textures.textures[0];
+            // let ao_texture = &self.downsample_textures.textures[1].normal;
             rc.bind(
                 0,
-                &DepthPosNormalParams {
+                &LightPassParams {
                     pos_view: textures_for_light_pass.pos.view,
                     pos_sampler: textures_for_light_pass.pos.sampler,
                     normal_view: textures_for_light_pass.normal.view,
@@ -886,6 +962,8 @@ impl State {
                         pad: [0; 2],
                         mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
                     },
+                    ao_view: ao_texture.view,
+                    ao_sampler: ao_texture.sampler,
                 },
             );
             rc.bind_vertex(0, self.screen_quad_buf);
@@ -983,7 +1061,7 @@ impl Camera {
     }
 
     pub fn projection(&self) -> glam::Mat4 {
-        glam::Mat4::perspective_rh(self.fov_rad, self.aspect, 0.001, 100.0)
+        glam::Mat4::perspective_rh(self.vfov_rad, self.aspect, 0.001, 100.0)
     }
 
     pub fn default_from_aspect(aspect: f32) -> Self {
@@ -991,7 +1069,7 @@ impl Camera {
             pos: Vec3A::ZERO,
             yaw: 0.0,
             pitch: 0.0,
-            fov_rad: TAU / 4.0,
+            vfov_rad: TAU / 4.0,
             aspect,
         }
     }

@@ -11,7 +11,12 @@ var normal_sampler: sampler;
 var prev_ao_view: texture_2d<f32>;
 var prev_ao_sampler: sampler;
 
+var ao_view: texture_2d<f32>;
+var ao_sampler: sampler;
+
+
 var<uniform> globals: Globals;
+var<uniform> ao_params: AOParams;
 
 
 struct Globals {
@@ -23,20 +28,20 @@ struct Globals {
 };
 
 
+struct AOParams {
+    is_first_pass: u32,
+    is_last_pass: u32,
+    ri_almost: f32,
+    ao_width: f32,
 
+    pad: vec3<u32>,
+    ao_height: f32,
+};
 
 struct Vertex {
     ws_pos: vec3<f32>,
     ws_normal: vec3<f32>,
 };
-
-fn linearize_depth(d: f32) -> f32
-{
-    let zFar = 100.0;
-    let zNear = 0.001;
-    return zNear * zFar / (zFar + d * (zNear - zFar));
-}
-
 
 
 struct DownSampleOutput {
@@ -55,11 +60,12 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
     // NOTE: using rh coordinate system means z values will be negative
     let subpixel_pz = -textureGather(2,pos_view, pos_sampler, vertex.uv);
 
-    // if(num1>num2) swap(&num1,&num2);
-    // if(num3>num4) swap(&num3,&num4);
-    // if(num1>num3) swap(&num1,&num3);
-    // if(num2>num4) swap(&num2,&num4);
-    // if(num2>num3) swap(&num2,&num3);
+    // NOTE: sorting algorithm
+    // if num0 > num1: swap(num0,num1)
+    // if num2 > num3: swap(num2,num3)
+    // if num0 > num2: swap(num0,num2)
+    // if num1 > num3: swap(num1,num3)
+    // if num1 > num2: swap(num1,num2)
     var idx = vec4<i32>(0,1,2,3);
 
     const idxs1 = array<i32,5>(0, 2, 0, 1, 1);
@@ -77,12 +83,12 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
             idx[i2] = tmp;
         }
     }
-    // NOTE: uncomment to verify pizels are sorted correctly
     let p0z = subpixel_pz[idx[0]];
     let p1z = subpixel_pz[idx[1]];
     let p2z = subpixel_pz[idx[2]];
     let p3z = subpixel_pz[idx[3]];
     
+    // NOTE: uncomment to verify pixels are sorted correctly
     // let sort_is_good = (d0 <= d1) && (d1 <= d2) && (d2 <= d3);
     // if !sort_is_good {
     //     c = 0.0;   
@@ -127,18 +133,66 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
 
 @fragment
 fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
-    // NOTE: kernel size
-    var ri = 5.0;
-    // ri = ri / pow(2.0, i)
+    let view_pos = textureSample(pos_view, pos_sampler, vertex.uv).xyz;
 
-    var AOnear = 0.0;
-    let c = vec3(1.0);
+    let r_max = 5.0;
+    let d_max = 2.0;
+    // NOTE: z is negative cause rh coordinate system
+    let pz = -view_pos.z;
+    let r_i = ao_params.ri_almost / pz; 
+
+    // NOTE: kernel size
+    let R_i = floor(min(r_max, r_i));
+    // let R_i = 5.0;
+
+
+    var dx = 1.0 / (ao_params.ao_width - 1.0);
+    let dy = 1.0 / (ao_params.ao_height - 1.0);
+    // let dx = 0.01;
+    // let dy = 0.01;
+
+
+    // let R_i_int = 2 * u32(R_i) + 1;
+    let p = textureSample(pos_view, pos_sampler, vertex.uv).xyz;
+    let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
+
+    let num_samples_x = u32(R_i) + 1;
+    // let num_samples_x = u32(4);
+    // let num_samples_x = u32(6);
+    let N = f32(num_samples_x * num_samples_x);
+    // let N = f32(num_samples_x);
+
+    var ao_near = 0.0;
+
+    // var sample_uv = vertex.uv - r_i * vec2(dx, dy);
+    // sample_uv = vertex.uv - r_i * vec2(dx, 0.0);
+    var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
+
+    for (var i: u32 = 0; i < num_samples_x; i++) {
+        for (var j: u32 = 0; j < num_samples_x; j++) {
+            let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
+            var d = (qi - p);
+            let di = length(d);
+            d /=  di;
+
+            let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
+
+            ao_near += 1.0 / N * rho * clamp(dot(n, d), 0.0, 1.0);
+            sample_uv.x += 2.0 * dx;
+        }
+        sample_uv.x -= 2.0 * dx * f32(num_samples_x);
+        sample_uv.y += 2.0 * dy;
+    }
+
+    var c = vec3(1.0 - ao_near);
+    
+
 
     return vec4(c, 1.0);
 }
 
 @fragment
-fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let view_pos = textureSample(pos_view, pos_sampler, vertex.uv);
     let normal = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
@@ -159,8 +213,11 @@ fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var c = vec3(ndotl);
     c += ambient;
 
-    depth = linearize_depth(depth);
-    let a = -vec3(view_pos.z) / 10.0;
+    let ao = textureSample(ao_view, ao_sampler, vertex.uv);
+    c = ao.xyz;
+
+    // depth = linearize_depth(depth);
+    // let a = -vec3(view_pos.z) / 10.0;
 
     // return vec4(a, 1.0);
     return vec4(c, 1.0);
@@ -180,3 +237,17 @@ fn vs_main(vertex: Vertex) -> VertexOutput {
 
     return VertexOutput(vec4(vertex.ws_pos,1.0), uv);
 }
+
+
+fn uv_2_texel(uv: vec2<f32>, wh: vec2<f32>) -> vec2<f32> {
+    //NOTE: 0,0 corresponds to 0,0 and 1,1 corresponds to (w-1, h-1),
+    // i.e actual indices
+    return uv * (wh - 1.0);
+}
+
+fn linearize_depth(d: f32) -> f32
+    {
+        let zFar = 100.0;
+        let zNear = 0.001;
+        return zNear * zFar / (zFar + d * (zNear - zFar));
+    }
