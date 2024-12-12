@@ -1297,7 +1297,11 @@ pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) -> CpuMesh {
 
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
-    let window_attributes = winit::window::Window::default_attributes().with_title("ssao");
+    let window_attributes = winit::window::Window::default_attributes()
+        .with_title("ssao")
+        // .with_inner_size(winit::dpi::PhysicalSize::new(1920, 1080))
+        // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
+        ;
 
     let window = event_loop.create_window(window_attributes).unwrap();
 

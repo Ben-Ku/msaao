@@ -142,32 +142,22 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let r_i = ao_params.ri_almost / pz; 
 
     // NOTE: kernel size
-    let R_i = floor(min(r_max, r_i));
+    // let R_i = floor(min(r_max, r_i));
+    let R_i = 5.0;
     // let R_i = 5.0;
 
-
-    var dx = 1.0 / (ao_params.ao_width - 1.0);
-    let dy = 1.0 / (ao_params.ao_height - 1.0);
-    // let dx = 0.01;
-    // let dy = 0.01;
-
-
-    // let R_i_int = 2 * u32(R_i) + 1;
     let p = textureSample(pos_view, pos_sampler, vertex.uv).xyz;
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
     let num_samples_x = u32(R_i) + 1;
-    // let num_samples_x = u32(4);
-    // let num_samples_x = u32(6);
     let N = f32(num_samples_x * num_samples_x);
-    // let N = f32(num_samples_x);
 
-    var ao_near = 0.0;
 
-    // var sample_uv = vertex.uv - r_i * vec2(dx, dy);
-    // sample_uv = vertex.uv - r_i * vec2(dx, 0.0);
+    var dx = 1.0 / (ao_params.ao_width - 1.0);
+    let dy = 1.0 / (ao_params.ao_height - 1.0);
     var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
 
+    var ao_near = 0.0;
     for (var i: u32 = 0; i < num_samples_x; i++) {
         for (var j: u32 = 0; j < num_samples_x; j++) {
             let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
@@ -176,6 +166,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
             d /=  di;
 
             let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
+
 
             ao_near += 1.0 / N * rho * clamp(dot(n, d), 0.0, 1.0);
             sample_uv.x += 2.0 * dx;
