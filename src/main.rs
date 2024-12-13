@@ -94,6 +94,14 @@ pub struct DepthPosNormalParams {
 }
 
 #[derive(blade_macros::ShaderData)]
+pub struct BlurParams {
+    pub ao_params: AOParams,
+
+    pub ao_view: gpu::TextureView,
+    pub ao_sampler: gpu::Sampler,
+}
+
+#[derive(blade_macros::ShaderData)]
 pub struct LightPassParams {
     pub globals: Globals,
     pub depth_view: gpu::TextureView,
@@ -189,6 +197,7 @@ pub struct DownsampleTextures {
 
 pub struct AOTextures {
     pub textures: Vec<TextureStuff>,
+    pub textures_after_blur: Vec<TextureStuff>,
     pub dummy_texture: TextureStuff,
 }
 
@@ -202,6 +211,7 @@ pub fn create_downsample_and_ao_textures(
 ) -> (DownsampleTextures, AOTextures) {
     let mut depth_pos_normal_textures = vec![];
     let mut ao_textures = vec![];
+    let mut ao_textures_blur = vec![];
 
     let width = screen_size.width;
     let height = screen_size.height;
@@ -325,7 +335,6 @@ pub fn create_downsample_and_ao_textures(
         depth_pos_normal_textures.push(depth_pos_normal_i);
 
         //NOTE: ao texture
-        // if i < num_textures - 1 {}
         let ao_texture_i = ctx.create_texture(gpu::TextureDesc {
             name: format!("ao texture {i}").as_str(),
             format: gpu::TextureFormat::Rgba32Float,
@@ -361,6 +370,43 @@ pub fn create_downsample_and_ao_textures(
         };
 
         ao_textures.push(ao_texture_stuff_i);
+
+        //NOTE: ao texture after blur
+        let ao_blur_texture_i = ctx.create_texture(gpu::TextureDesc {
+            name: format!("ao blur texture {i}").as_str(),
+            format: gpu::TextureFormat::Rgba32Float,
+            size: extent_i,
+            array_layer_count: 1,
+            mip_level_count: 1,
+            dimension: gpu::TextureDimension::D2,
+            usage: gpu::TextureUsage::TARGET | gpu::TextureUsage::RESOURCE,
+        });
+        let ao_blur_view_i = ctx.create_texture_view(
+            ao_blur_texture_i,
+            gpu::TextureViewDesc {
+                name: format!("ao blur view {i}").as_str(),
+                format: gpu::TextureFormat::Rgba32Float,
+                dimension: gpu::ViewDimension::D2,
+                subresources: &Default::default(),
+            },
+        );
+        let ao_blur_sampler_i = ctx.create_sampler(gpu::SamplerDesc {
+            name: format!("ao blur sampler {i}").as_str(),
+            address_modes: Default::default(),
+            mag_filter: gpu::FilterMode::Nearest,
+            min_filter: gpu::FilterMode::Nearest,
+            mipmap_filter: gpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let ao_blur_texture_stuff_i = TextureStuff {
+            texture: ao_blur_texture_i,
+            view: ao_blur_view_i,
+            sampler: ao_blur_sampler_i,
+            size: extent_i,
+        };
+
+        ao_textures_blur.push(ao_blur_texture_stuff_i);
     }
 
     let ao_dummy_texture = {
@@ -409,6 +455,7 @@ pub fn create_downsample_and_ao_textures(
     let ao_textures = AOTextures {
         textures: ao_textures,
         dummy_texture: ao_dummy_texture,
+        textures_after_blur: ao_textures_blur,
     };
 
     (downsample_textures, ao_textures)
@@ -421,6 +468,7 @@ pub struct Pipelines {
     pub light: gpu::RenderPipeline,
     pub depth_downsample: gpu::RenderPipeline,
     pub calc_ao: gpu::RenderPipeline,
+    pub blur_ao: gpu::RenderPipeline,
 }
 
 pub fn last_time_shader_modified() -> std::time::SystemTime {
@@ -601,6 +649,30 @@ impl Pipelines {
             }],
         });
 
+        let ao_blur = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
+            name: "ao blur",
+            data_layouts: &[&<BlurParams as gpu::ShaderData>::layout()],
+            vertex: light_shader.at("vs_main"),
+            vertex_fetches: &[gpu::VertexFetchState {
+                layout: &<Vertex as gpu::Vertex>::layout(),
+                instanced: false,
+            }],
+            primitive: gpu::PrimitiveState {
+                topology: gpu::PrimitiveTopology::TriangleList,
+                front_face: gpu::FrontFace::Ccw,
+                cull_mode: None,
+                unclipped_depth: false,
+                wireframe: false,
+            },
+            depth_stencil: None,
+            fragment: light_shader.at("fs_blur_ao"),
+            color_targets: &[gpu::ColorTargetState {
+                format: gpu::TextureFormat::Rgba32Float,
+                blend: Some(gpu::BlendState::REPLACE),
+                write_mask: gpu::ColorWrites::default(),
+            }],
+        });
+
         let last_modified = last_time_shader_modified();
         // let metadata = std::fs::Metadata:
         Some(Self {
@@ -609,6 +681,7 @@ impl Pipelines {
             depth_downsample: depth_downsample_pipeline,
             last_modified_shader_time: last_modified,
             calc_ao: ao_pipeline,
+            blur_ao: ao_blur,
         })
     }
 }
@@ -805,6 +878,7 @@ impl State {
                 &self.ao_textures.textures[i + 1]
             };
 
+            // NOTE: calc ao pass
             if let mut calc_ao_pass = self.command_encoder.render(
                 format!("calc ao {i}").as_str(),
                 gpu::RenderTargetSet {
@@ -841,6 +915,45 @@ impl State {
                         prev_ao_view: ao_prev.view,
                         prev_ao_sampler: ao_prev.sampler,
 
+                        ao_params: AOParams::from(
+                            is_first_pass,
+                            is_last_pass,
+                            i,
+                            1.0,
+                            self.camera.vfov_rad,
+                            ao_target.size.width,
+                            ao_target.size.height,
+                        ),
+                    },
+                );
+                rc.bind_vertex(0, self.screen_quad_buf);
+                let num_quad_vertices = 6;
+                rc.draw(0, num_quad_vertices as _, 0, 1);
+            }
+
+            // NOTE: blur ao pass
+
+            let ao_blur_target = &self.ao_textures.textures_after_blur[i];
+            if let mut blur_ao_pass = self.command_encoder.render(
+                format!("blur ao {i}").as_str(),
+                gpu::RenderTargetSet {
+                    colors: &[gpu::RenderTarget {
+                        view: ao_blur_target.view,
+                        init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+                        finish_op: gpu::FinishOp::Store,
+                    }],
+                    depth_stencil: None,
+                },
+            ) {
+                // NOTE: these textures have same size as render target
+                // let dnp = &self.downsample_textures.textures[i];
+                let mut rc = blur_ao_pass.with(&self.pipelines.blur_ao);
+
+                rc.bind(
+                    0,
+                    &BlurParams {
+                        ao_view: ao_target.view,
+                        ao_sampler: ao_target.sampler,
                         ao_params: AOParams::from(
                             is_first_pass,
                             is_last_pass,
@@ -944,6 +1057,7 @@ impl State {
         ) {
             let mut rc = light_pass.with(&self.pipelines.light);
             let ao_texture = &self.ao_textures.textures[0];
+            // let ao_texture = &self.ao_textures.textures[0];
             // let ao_texture = &self.downsample_textures.textures[1].normal;
             rc.bind(
                 0,

@@ -15,6 +15,7 @@ var ao_view: texture_2d<f32>;
 var ao_sampler: sampler;
 
 
+
 var<uniform> globals: Globals;
 var<uniform> ao_params: AOParams;
 
@@ -181,6 +182,16 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4(c, 1.0);
 }
+
+@fragment
+fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
+
+    
+    let ao = textureSample(ao_view, ao_sampler, vertex.uv).xyz;
+
+    return vec4(ao, 1.0);
+}
+
 
 @fragment
 fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
