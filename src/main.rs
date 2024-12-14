@@ -118,6 +118,26 @@ pub struct LightPassParams {
 }
 
 #[derive(blade_macros::ShaderData)]
+pub struct CalcAoParams {
+    pub pos_view: gpu::TextureView,
+    pub pos_sampler: gpu::Sampler,
+
+    pub normal_view: gpu::TextureView,
+    pub normal_sampler: gpu::Sampler,
+
+    pub prev_pos_view: gpu::TextureView,
+    pub prev_pos_sampler: gpu::Sampler,
+
+    pub prev_normal_view: gpu::TextureView,
+    pub prev_normal_sampler: gpu::Sampler,
+
+    pub prev_ao_view: gpu::TextureView,
+    pub prev_ao_sampler: gpu::Sampler,
+
+    pub ao_params: AOParams,
+}
+
+#[derive(blade_macros::ShaderData)]
 pub struct PosNormalPrevAOParams {
     pub globals: Globals,
     pub pos_view: gpu::TextureView,
@@ -164,6 +184,11 @@ pub struct Camera {
     pub pitch: f32,
     pub vfov_rad: f32,
     pub aspect: f32,
+}
+
+pub struct InputState {
+    pub ao_level: usize,
+    pub use_blur: bool,
 }
 
 pub struct GBuffer {
@@ -626,7 +651,7 @@ impl Pipelines {
         let ao_pipeline = ctx.create_render_pipeline(gpu::RenderPipelineDesc {
             name: "ao",
             // TODO: fix daat layot
-            data_layouts: &[&<PosNormalPrevAOParams as gpu::ShaderData>::layout()],
+            data_layouts: &[&<CalcAoParams as gpu::ShaderData>::layout()],
             // data_layouts: &[],
             vertex: light_shader.at("vs_main"),
             vertex_fetches: &[gpu::VertexFetchState {
@@ -698,10 +723,12 @@ pub struct State {
     pub screen_quad_buf: gpu::BufferPiece,
     pub downsample_textures: DownsampleTextures,
     pub ao_textures: AOTextures,
+    pub input_state: InputState,
 }
 
 #[derive(Default)]
 pub struct RetainedInput {
+    pub just_pressed_keys: std::collections::HashSet<winit::keyboard::KeyCode>,
     pub held_keys: std::collections::HashSet<winit::keyboard::KeyCode>,
 }
 
@@ -797,6 +824,11 @@ impl State {
 
         let pipelines = Pipelines::create_pipelines(&ctx, &surface).unwrap();
 
+        let input_state = InputState {
+            ao_level: 0,
+            use_blur: false,
+        };
+
         Self {
             command_encoder,
             ctx,
@@ -809,6 +841,7 @@ impl State {
             pipelines,
             downsample_textures,
             ao_textures,
+            input_state,
         }
     }
 
@@ -892,28 +925,28 @@ impl State {
             ) {
                 // NOTE: these textures have same size as render target
                 let dnp = &self.downsample_textures.textures[i];
+                let prev_dnp = &self.downsample_textures.textures[(i + 1).min(NUM_AO_TEXTURES - 1)];
+                let prev_ao_blur =
+                    &self.ao_textures.textures_after_blur[(i + 1).min(NUM_AO_TEXTURES - 1)];
                 let mut rc = calc_ao_pass.with(&self.pipelines.calc_ao);
 
                 rc.bind(
                     0,
-                    &PosNormalPrevAOParams {
-                        globals: Globals {
-                            mvp_transform: self.camera.vp().to_cols_array_2d(),
-                            mv_transform: self.camera.view().to_cols_array_2d(),
-                            cam_pos: self.camera.pos.to_array(),
-                            cam_dir: self.camera.right_forward_up()[1].to_array(),
-                            pad: [0; 2],
-                            mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
-                        },
-
+                    &CalcAoParams {
                         pos_view: dnp.pos.view,
                         pos_sampler: dnp.pos.sampler,
 
                         normal_view: dnp.normal.view,
                         normal_sampler: dnp.normal.sampler,
 
-                        prev_ao_view: ao_prev.view,
-                        prev_ao_sampler: ao_prev.sampler,
+                        prev_pos_view: prev_dnp.pos.view,
+                        prev_pos_sampler: prev_dnp.pos.sampler,
+
+                        prev_normal_view: prev_dnp.normal.view,
+                        prev_normal_sampler: prev_dnp.normal.sampler,
+
+                        prev_ao_view: prev_ao_blur.view,
+                        prev_ao_sampler: prev_ao_blur.sampler,
 
                         ao_params: AOParams::from(
                             is_first_pass,
@@ -1056,7 +1089,14 @@ impl State {
             },
         ) {
             let mut rc = light_pass.with(&self.pipelines.light);
-            let ao_texture = &self.ao_textures.textures[0];
+
+            let use_blurred_texture = self.input_state.use_blur;
+            let ao_index = self.input_state.ao_level;
+            let ao_texture = if use_blurred_texture {
+                &self.ao_textures.textures_after_blur[ao_index]
+            } else {
+                &self.ao_textures.textures[ao_index]
+            };
             // let ao_texture = &self.ao_textures.textures[0];
             // let ao_texture = &self.downsample_textures.textures[1].normal;
             rc.bind(
@@ -1130,9 +1170,48 @@ impl State {
                 winit::keyboard::KeyCode::KeyL => {
                     self.camera.yaw -= angle_speed;
                 }
+
+                winit::keyboard::KeyCode::Digit1 => {
+                    self.input_state.ao_level = 0;
+                }
+                winit::keyboard::KeyCode::Digit2 => {
+                    self.input_state.ao_level = 1;
+                }
+                winit::keyboard::KeyCode::Digit3 => {
+                    self.input_state.ao_level = 2;
+                }
+                winit::keyboard::KeyCode::Digit4 => {
+                    self.input_state.ao_level = 3;
+                }
+                winit::keyboard::KeyCode::Digit5 => {
+                    self.input_state.ao_level = 4;
+                }
+
+                winit::keyboard::KeyCode::Digit6 => {
+                    self.input_state.ao_level = 5;
+                }
+                winit::keyboard::KeyCode::Digit7 => {
+                    self.input_state.ao_level = 6;
+                }
+
                 _ => {}
             }
+
+            self.input_state.ao_level = self.input_state.ao_level.min(NUM_AO_TEXTURES - 1);
+
+            for key in self.retained_input.just_pressed_keys.iter() {
+                match key {
+                    winit::keyboard::KeyCode::KeyB => {
+                        self.input_state.use_blur = !self.input_state.use_blur;
+
+                        dbg!(self.input_state.use_blur);
+                    }
+
+                    _ => {}
+                }
+            }
         }
+        self.retained_input.just_pressed_keys.clear();
     }
 
     pub fn recreate_pipelines_if_required(&mut self) {
@@ -1413,7 +1492,8 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window_attributes = winit::window::Window::default_attributes()
         .with_title("ssao")
-        // .with_inner_size(winit::dpi::PhysicalSize::new(1920, 1080))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
+        .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
         // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         ;
 
@@ -1438,7 +1518,9 @@ fn main() {
                         ..
                     } => match key_state {
                         winit::event::ElementState::Pressed => {
-                            state.retained_input.held_keys.insert(key_code);
+                            if state.retained_input.held_keys.insert(key_code) {
+                                state.retained_input.just_pressed_keys.insert(key_code);
+                            }
                         }
                         winit::event::ElementState::Released => {
                             state.retained_input.held_keys.remove(&key_code);
@@ -1450,13 +1532,6 @@ fn main() {
                     }
                     winit::event::WindowEvent::RedrawRequested => {
                         state.recreate_pipelines_if_required();
-
-                        // state.camera.pos -= 0.0001 * Vec3A::Z;
-                        // state.camera.yaw += 0.0001;
-
-                        let [r, f, u] = state.camera.right_forward_up();
-                        // state.camera.yaw = TAU / 4.0;
-                        // state.camera.pos += 0.001 * f;
                         state.handle_input();
                         state.render();
                     }
