@@ -25,8 +25,8 @@ pub struct Globals {
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct AOParams {
-    pub is_first_pass: u32,
-    pub is_last_pass: u32,
+    pub num_passes: u32,
+    pub pass_i: u32,
     pub ri_almost: f32,
     pub ao_width: f32,
 
@@ -35,15 +35,7 @@ pub struct AOParams {
 }
 
 impl AOParams {
-    pub fn from(
-        is_first_pass: bool,
-        is_last_pass: bool,
-        pass_i: usize,
-        d_max: f32,
-        fov_y: f32,
-        ao_width: u32,
-        ao_height: u32,
-    ) -> Self {
+    pub fn from(pass_i: usize, d_max: f32, fov_y: f32, ao_width: u32, ao_height: u32) -> Self {
         let s = ao_height as f32;
         let a = fov_y;
         // NOTE: eq (5) in reference paper, we need to divide by depth of specific pixel in shader tog get exact value
@@ -51,12 +43,12 @@ impl AOParams {
         let ri_almost = r0_almost / ((1 << pass_i) as f32);
         let ri_almost = ri_almost;
         Self {
-            is_first_pass: is_first_pass as _,
-            is_last_pass: is_last_pass as _,
             ri_almost,
             pad: Default::default(),
             ao_width: ao_width as f32,
             ao_height: ao_height as f32,
+            num_passes: NUM_AO_TEXTURES as _,
+            pass_i: pass_i as _,
         }
     }
 }
@@ -64,8 +56,6 @@ impl AOParams {
 #[derive(blade_macros::ShaderData)]
 pub struct GeometryParams {
     pub globals: Globals,
-    pub depth_view: gpu::TextureView,
-    pub depth_sampler: gpu::Sampler,
 }
 
 // #[derive(blade_macros::ShaderData)]
@@ -713,6 +703,8 @@ impl Pipelines {
 }
 
 pub struct State {
+    pub delta_time: f32,
+    pub prev_time: std::time::SystemTime,
     pub pipelines: Pipelines,
     pub command_encoder: gpu::CommandEncoder,
     pub ctx: gpu::Context,
@@ -741,7 +733,7 @@ impl State {
                 validation: true,
                 timing: false,
                 capture: false,
-                overlay: true,
+                overlay: false,
                 device_id: 0,
             })
             .unwrap()
@@ -845,6 +837,8 @@ impl State {
             downsample_textures,
             ao_textures,
             input_state,
+            delta_time: 0.1,
+            prev_time: std::time::SystemTime::now(),
         }
     }
 
@@ -906,7 +900,6 @@ impl State {
         for i in (0..NUM_AO_TEXTURES).rev() {
             let ao_target = &self.ao_textures.textures[i];
             let is_first_pass = i == NUM_AO_TEXTURES - 1;
-            let is_last_pass = i == 0;
 
             let ao_prev = if is_first_pass {
                 &self.ao_textures.dummy_texture
@@ -952,8 +945,6 @@ impl State {
                         prev_ao_sampler: prev_ao_blur.sampler,
 
                         ao_params: AOParams::from(
-                            is_first_pass,
-                            is_last_pass,
                             i,
                             1.0,
                             self.camera.vfov_rad,
@@ -990,8 +981,6 @@ impl State {
                         ao_view: ao_target.view,
                         ao_sampler: ao_target.sampler,
                         ao_params: AOParams::from(
-                            is_first_pass,
-                            is_last_pass,
                             i,
                             1.0,
                             self.camera.vfov_rad,
@@ -1024,33 +1013,31 @@ impl State {
         self.command_encoder
             .init_texture(self.ao_textures.dummy_texture.texture);
 
-        let textures_for_geometry_pass = &self.downsample_textures.textures[0];
+        let geometry_target = &self.downsample_textures.textures[0];
 
         if let mut geometry_pass = self.command_encoder.render(
             "geometry",
             gpu::RenderTargetSet {
                 colors: &[
                     gpu::RenderTarget {
-                        view: textures_for_geometry_pass.pos.view,
+                        view: geometry_target.pos.view,
                         init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                         finish_op: gpu::FinishOp::Store,
                     },
                     gpu::RenderTarget {
-                        view: textures_for_geometry_pass.normal.view,
+                        view: geometry_target.normal.view,
                         init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                         finish_op: gpu::FinishOp::Store,
                     },
                 ],
                 depth_stencil: Some(gpu::RenderTarget {
-                    view: textures_for_geometry_pass.depth.view,
+                    view: geometry_target.depth.view,
                     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
                     finish_op: gpu::FinishOp::Store,
                 }),
             },
         ) {
             let mut rc = geometry_pass.with(&self.pipelines.geometry);
-
-            let textures_for_geometry_pass = &self.downsample_textures.textures[0];
             rc.bind(
                 0,
                 &GeometryParams {
@@ -1062,8 +1049,6 @@ impl State {
                         pad: [0; 2],
                         mv_rot: self.camera.view_rot_only().to_cols_array_2d(),
                     },
-                    depth_view: textures_for_geometry_pass.depth.view,
-                    depth_sampler: textures_for_geometry_pass.depth.sampler,
                 },
             );
 
@@ -1136,42 +1121,43 @@ impl State {
     pub fn handle_input(&mut self) {
         let [r, f, u] = self.camera.right_forward_up();
 
-        let speed = 0.01;
-        let angle_speed = 0.003;
+        let speed = 6.0;
+        let angle_speed = 0.8;
+        let dt = self.delta_time;
 
         for key in self.retained_input.held_keys.iter() {
             match key {
                 winit::keyboard::KeyCode::KeyW => {
-                    self.camera.pos += f * speed;
+                    self.camera.pos += f * dt * speed;
                 }
                 winit::keyboard::KeyCode::KeyA => {
-                    self.camera.pos -= r * speed;
+                    self.camera.pos -= r * dt * speed;
                 }
                 winit::keyboard::KeyCode::KeyS => {
-                    self.camera.pos -= f * speed;
+                    self.camera.pos -= f * dt * speed;
                 }
                 winit::keyboard::KeyCode::KeyD => {
-                    self.camera.pos += r * speed;
+                    self.camera.pos += r * dt * speed;
                 }
                 winit::keyboard::KeyCode::KeyQ => {
-                    self.camera.pos -= u * speed;
+                    self.camera.pos -= u * dt * speed;
                 }
                 winit::keyboard::KeyCode::KeyE => {
-                    self.camera.pos += u * speed;
+                    self.camera.pos += u * dt * speed;
                 }
 
                 // angle
                 winit::keyboard::KeyCode::KeyI => {
-                    self.camera.pitch += angle_speed;
+                    self.camera.pitch += dt * angle_speed;
                 }
                 winit::keyboard::KeyCode::KeyJ => {
-                    self.camera.yaw += angle_speed;
+                    self.camera.yaw += dt * angle_speed;
                 }
                 winit::keyboard::KeyCode::KeyK => {
-                    self.camera.pitch -= angle_speed;
+                    self.camera.pitch -= dt * angle_speed;
                 }
                 winit::keyboard::KeyCode::KeyL => {
-                    self.camera.yaw -= angle_speed;
+                    self.camera.yaw -= dt * angle_speed;
                 }
 
                 winit::keyboard::KeyCode::Digit1 => {
@@ -1550,8 +1536,8 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window_attributes = winit::window::Window::default_attributes()
         .with_title("ssao")
-        .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
-        // .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
+        .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
         // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         ;
 
@@ -1589,6 +1575,11 @@ fn main() {
                         target.exit();
                     }
                     winit::event::WindowEvent::RedrawRequested => {
+                        let now = std::time::SystemTime::now();
+                        if let Ok(delta) = now.duration_since(state.prev_time) {
+                            state.delta_time = delta.as_secs_f32();
+                        }
+                        state.prev_time = now;
                         state.recreate_pipelines_if_required();
                         state.handle_input();
                         state.render();

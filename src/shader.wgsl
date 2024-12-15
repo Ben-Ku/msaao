@@ -15,9 +15,6 @@ struct VertexOutput {
     @location(1) view_normal: vec3<f32>,
 };
 
-var depth_view: texture_depth_2d;
-var depth_sampler: sampler_comparison;
-
 struct Vertex {
     ws_pos: vec3<f32>,
     ws_normal: vec3<f32>,
@@ -42,16 +39,6 @@ struct FragmentOutput {
 
 @fragment
 fn fs_main(vs_out: VertexOutput) -> FragmentOutput {
-    // let clip_pos = vertex.clip_pos;
-
-    // let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
-    // let ndotl = max(dot(vertex.normal, -sun_dir), 0.0);
-    // let ambient = 0.2;
-    // var c = vec3(0.0);
-    // c += ndotl;
-    // c += ambient;
-
-    // let ws_pos = vec4(vertex.ws_pos,clip_pos.z);
     let view_pos = vec4(vs_out.view_pos, 0.0);
     let view_normal = vec4(vs_out.view_normal, 0.0);
 
