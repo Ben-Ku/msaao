@@ -151,9 +151,9 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let r_i = ao_params.ri_almost / pz; 
 
     // NOTE: kernel size
-    // let R_i = floor(min(r_max, r_i));
+    let R_i = floor(min(r_max, r_i));
     // FIXME: uncomment above
-    let R_i = 5.0;
+    // let R_i = 5.0;
 
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
@@ -236,12 +236,13 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let superpixel_ao1 = textureGather(1, prev_ao_view, prev_ao_sampler, vertex.uv);
     let superpixel_ao2 = textureGather(2, prev_ao_view, prev_ao_sampler, vertex.uv);
     // QUESTION: should it be normalized or not
-    // let w_tot = dot(w_bilateral, vec4(1.0));
     // var ao_far = dot(w_bilateral, superpixel_ao) / w_tot;
     var ao_far: vec3f;
-    ao_far[0] = dot(w_bilinear, superpixel_ao0);
-    ao_far[1] = dot(w_bilinear, superpixel_ao1);
-    ao_far[2] = dot(w_bilinear, superpixel_ao2);
+    ao_far[0] = dot(w_bilateral, superpixel_ao0);
+    ao_far[1] = dot(w_bilateral, superpixel_ao1);
+    ao_far[2] = dot(w_bilateral, superpixel_ao2);
+    let w_tot = dot(w_bilateral, vec4(1.0));
+    // ao_far[2] /= w_tot ;
     
 
     var c: vec3f;
@@ -260,11 +261,10 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     } 
 
     if ao_params.is_last_pass == 1 {
-
         let ao_max = max(ao_near[0] / ao_near[1], ao_far[0]);
         let ao_avg = (ao_far[1] + ao_near[0]) / (ao_far[2] + ao_near[1]);
         let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
-        c = vec3(1.0 - ao_final);
+        c = vec3(ao_final);
     }
     return vec4(c, 1.0);
 }
@@ -337,9 +337,14 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
     c += ambient;
 
     let ao = textureSample(ao_view, ao_sampler, vertex.uv);
-    c =  (1.0 - ao.xyz);
     c = ao.xyz;
 
+
+    let ao_max = ao[0];
+    let ao_avg = ao[1] / ao[2];
+    // let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
+    let ao_final = ao[0];
+    c = vec3(1.0 - ao_final);
     // depth = linearize_depth(depth);
     // let a = -vec3(view_pos.z) / 10.0;
 

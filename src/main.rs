@@ -776,9 +776,11 @@ impl State {
         });
 
         let sponza_vertices = load_sponza();
+        let sibekik_cathedrals = load_cathedral();
         let a = sponza_vertices.len() / 3;
         dbg!(a);
-        let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
+        // let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
+        let gpu_sponza = upload_vertices(sibekik_cathedrals, &ctx);
         meshes.clear();
         meshes.push(gpu_sponza);
 
@@ -979,7 +981,6 @@ impl State {
                 },
             ) {
                 // NOTE: these textures have same size as render target
-                // let dnp = &self.downsample_textures.textures[i];
                 let mut rc = blur_ao_pass.with(&self.pipelines.blur_ao);
 
                 rc.bind(
@@ -1005,8 +1006,6 @@ impl State {
         }
     }
 
-    // pub fn render_upsample(&mut self) {}
-
     pub fn render(&mut self) {
         self.command_encoder.start();
         for texture in self.downsample_textures.textures.iter() {
@@ -1016,6 +1015,9 @@ impl State {
         }
 
         for t in self.ao_textures.textures.iter() {
+            self.command_encoder.init_texture(t.texture);
+        }
+        for t in self.ao_textures.textures_after_blur.iter() {
             self.command_encoder.init_texture(t.texture);
         }
         self.command_encoder
@@ -1294,6 +1296,15 @@ pub fn load_sponza() -> Vec<Vertex> {
     vertices
 }
 
+pub fn load_cathedral() -> Vec<Vertex> {
+    dbg!("loading sibenik cathedral");
+    let path = std::path::Path::new("src/assets/sibenik_cathedral/sibenik.obj");
+    let mesh = parse_obj_file(path);
+    let vertices = turn_mesh_into_pure_vertex_list(mesh);
+
+    vertices
+}
+
 // pub fn load_
 
 pub fn turn_mesh_into_pure_vertex_list(mesh: CpuMesh) -> Vec<Vertex> {
@@ -1423,8 +1434,11 @@ pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) -> CpuMesh {
                 match pre {
                     "v" => {
                         let mut v = Vec3A::ZERO;
-                        for (i, x) in rest.split(" ").enumerate() {
+                        for (i, x) in rest.split_whitespace().enumerate() {
                             if let Ok(x) = x.parse() {
+                                if i > 2 {
+                                    dbg!(&line);
+                                }
                                 v[i] = x;
                             }
                         }
@@ -1492,8 +1506,8 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window_attributes = winit::window::Window::default_attributes()
         .with_title("ssao")
-        // .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
-        .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
+        .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
         // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         ;
 
