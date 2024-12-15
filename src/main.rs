@@ -1,4 +1,4 @@
-use std::io::BufRead;
+use std::io::{BufRead, Read, Write};
 
 use nanorand::Rng;
 
@@ -178,6 +178,7 @@ pub struct CpuMesh {
     pub indices: Vec<usize>,
 }
 
+#[derive(Clone)]
 pub struct Camera {
     pub pos: Vec3A,
     pub yaw: f32,
@@ -1208,6 +1209,12 @@ impl State {
 
                         dbg!(self.input_state.use_blur);
                     }
+                    winit::keyboard::KeyCode::KeyU => {
+                        self.camera.save_state();
+                    }
+                    winit::keyboard::KeyCode::KeyY => {
+                        self.camera.load_state();
+                    }
 
                     _ => {}
                 }
@@ -1231,10 +1238,6 @@ impl State {
 }
 
 impl Camera {
-    // pub fn to_vp(&self) -> glam::Mat4 {
-    // glam::Mat4::perspective_rh(self.fov_rad,self.aspect , , )
-    // }
-
     pub fn view(&self) -> glam::Mat4 {
         let rot = self.rot_quat();
         let pos = Vec3::from_array(self.pos.to_array());
@@ -1285,6 +1288,47 @@ impl Camera {
         let u = rot * Vec3A::Y;
 
         [r, f, u]
+    }
+    pub fn save_state(&self) {
+        let path = std::path::Path::new("src/assets/cam/cam.txt");
+        let Ok(file) = std::fs::File::create(path) else {
+            dbg!("coulf not write cam state");
+            return;
+        };
+        let mut w = std::io::BufWriter::new(file);
+
+        let _ = w.write_fmt(format_args!(" {}", self.pos.x));
+        let _ = w.write_fmt(format_args!(" {}", self.pos.y));
+        let _ = w.write_fmt(format_args!(" {}", self.pos.z));
+
+        let _ = w.write_fmt(format_args!(" {}", self.yaw));
+        let _ = w.write_fmt(format_args!(" {}", self.pitch));
+        let _ = w.write_fmt(format_args!(" {}", self.vfov_rad));
+        let _ = w.write_fmt(format_args!(" {}", self.aspect));
+        dbg!("saved cam state to file");
+        // self.
+    }
+    pub fn load_state(&mut self) {
+        let path = std::path::Path::new("src/assets/cam/cam.txt");
+        let Ok(file) = std::fs::File::open(path) else {
+            dbg!("coulf not read cam state");
+            return;
+        };
+        let reader = std::io::BufReader::new(file);
+        let Some(Ok(lines)) = reader.lines().next() else {
+            dbg!("coulf not load cam state");
+            return;
+        };
+        let mut args = lines.split_whitespace();
+
+        self.pos.x = args.next().unwrap().parse().unwrap();
+        self.pos.y = args.next().unwrap().parse().unwrap();
+        self.pos.z = args.next().unwrap().parse().unwrap();
+
+        self.yaw = args.next().unwrap().parse().unwrap();
+        self.pitch = args.next().unwrap().parse().unwrap();
+        self.vfov_rad = args.next().unwrap().parse().unwrap();
+        self.aspect = args.next().unwrap().parse().unwrap();
     }
 }
 pub fn load_sponza() -> Vec<Vertex> {

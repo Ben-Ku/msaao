@@ -271,12 +271,15 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
 @fragment
 fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
-
-    
     // let ao = textureSample(ao_view, ao_sampler, vertex.uv).xyz;
 
-    let dx = 1.0 / (ao_params.ao_width);
-    let dy = 1.0 / (ao_params.ao_height);
+
+    // let dim = textureDimensions(ao_view).xy;
+    // let dx = 1.0 / (ao_params.ao_width);
+    // let dy = 1.0 / (ao_params.ao_height);
+    let dim = textureDimensions(ao_view).xy;
+    let dx = 1.0 / f32(dim.x);
+    let dy = 1.0 / f32(dim.y);
 
     // NOTE: actual gaussian kernel should be something like 
     // https://stackoverflow.com/questions/20746172/blur-an-image-using-3x3-gaussian-kernel
