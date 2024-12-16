@@ -51,6 +51,16 @@ struct Vertex {
     ws_normal: vec3<f32>,
 };
 
+const poisson_disc_16 = array(
+    -0.6116678f,  0.04548655f, -0.26605980f, -0.6445347f,
+    -0.4798763f,  0.78557830f, -0.19723210f, -0.1348270f,
+    -0.7351842f, -0.58396650f, -0.35353550f,  0.3798947f,
+    0.1423388f,  0.39469180f, -0.01819171f,  0.8008046f,
+    0.3313283f, -0.04656135f,  0.58593510f,  0.4467109f,
+    0.8577477f,  0.11188750f,  0.03690137f, -0.9906120f,
+    0.4768903f, -0.84335800f,  0.13749180f, -0.4746810f,
+    0.7814927f, -0.48938420f,  0.38269190f,  0.8695006f
+    );
 
 struct DownSampleOutput {
     @builtin(frag_depth) depth: f32,
@@ -63,10 +73,10 @@ struct DownSampleOutput {
 fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
     // let depth = textureSample(depth_view, depth_sampler, vertex.uv);
     // let subpixel_depths = textureGather(depth_view, depth_sampler, vertex.uv);
-    let subpixel_px = textureGather(0 ,pos_view, pos_sampler, vertex.uv);
-    let subpixel_py = textureGather(1 ,pos_view, pos_sampler, vertex.uv);
+    let subpixel_px = textureGather(0, pos_view, pos_sampler, vertex.uv);
+    let subpixel_py = textureGather(1, pos_view, pos_sampler, vertex.uv);
     // NOTE: using rh coordinate system means z values will be negative
-    let subpixel_pz = -textureGather(2,pos_view, pos_sampler, vertex.uv);
+    let subpixel_pz = -textureGather(2, pos_view, pos_sampler, vertex.uv);
 
     // NOTE: sorting algorithm
     // if num0 > num1: swap(num0,num1)
@@ -92,8 +102,8 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
         }
     }
     let p0z = subpixel_pz[idx[0]];
-    let p1z = subpixel_pz[idx[1]];
-    let p2z = subpixel_pz[idx[2]];
+    // let p1z = subpixel_pz[idx[1]];
+    // let p2z = subpixel_pz[idx[2]];
     let p3z = subpixel_pz[idx[3]];
     
     // NOTE: uncomment to verify pixels are sorted correctly
@@ -108,16 +118,22 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
 
     let d_thresh = 1.0;
 
-    let idx_1 = idx[1];
 
+    let idx_0 = idx[0];
+    let idx_3 = idx[3];
+    let p0 = vec3(subpixel_px[idx_0], subpixel_py[idx_0], subpixel_pz[idx_0]);
+    let p3 = vec3(subpixel_px[idx_3], subpixel_py[idx_3], subpixel_pz[idx_3]);
+    let diffy = distance(p0, p3);
     
     let subpixel_nx = textureGather(0 ,normal_view, normal_sampler, vertex.uv);
     let subpixel_ny = textureGather(1 ,normal_view, normal_sampler, vertex.uv);
     let subpixel_nz = textureGather(2 ,normal_view, normal_sampler, vertex.uv);
 
+    let idx_1 = idx[1];
     let p1 = vec3(subpixel_px[idx_1], subpixel_py[idx_1], subpixel_pz[idx_1]);
     let n1 = vec3(subpixel_nx[idx_1], subpixel_ny[idx_1], subpixel_nz[idx_1]);
     if p3z - p0z <= d_thresh {
+    // if diffy <= d_thresh {
         let idx_2 = idx[2];
         let p2 = vec3(subpixel_px[idx_2], subpixel_py[idx_2], subpixel_pz[idx_2]);
         let n2 = vec3(subpixel_nx[idx_2], subpixel_ny[idx_2], subpixel_nz[idx_2]);
@@ -129,11 +145,11 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
         n_new = n1; 
     }
 
-    n_new = normalize(n_new);
+    // n_new = normalize(n_new);
 
     //NOTE: revert the negative z we added in the beginning
     p_new.z = -p_new.z;
-    let output = DownSampleOutput(0.0, vec4(p_new, 1.0), vec4(vec3(n_new), 1.0));
+    let output = DownSampleOutput(0.0, vec4(p_new, 1.0), vec4(n_new, 1.0));
     
     return output;
 }
@@ -145,6 +161,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     //NOTE: calc ao near
     let r_max = 5.0;
+    // let d_max = 2.0;
     let d_max = 2.0;
     // NOTE: z is negative cause rh coordinate system
     let pz = -p.z;
@@ -153,6 +170,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // NOTE: kernel size
     // let R_i = max(floor(min(r_max, r_i)), 1.0);
     var R_i = floor(min(r_max, r_i));
+    R_i = max(R_i, 2.0);
     // R_i = 5.0;
 
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
@@ -162,34 +180,51 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let N = f32(num_samples_x * num_samples_x);
 
 
-    let dx = 1.0 / (ao_params.ao_width);
-    let dy = 1.0 / (ao_params.ao_height);
-    var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
+    let dim = vec2f(textureDimensions(pos_view).xy);
+    let dx = 1.0 / dim.x;
+    let dy = 1.0 / dim.y;
 
-    var ao_near_x = 0.0;
-    for (var i: u32 = 0; i < num_samples_x; i++) {
-        for (var j: u32 = 0; j < num_samples_x; j++) {
+    var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
+    var ao_near = vec2(0.0);
+    if ao_params.pass_i == 0 {
+        for (var i: u32 = 0; i < 32; i = i + 2) {
+            let ix = poisson_disc_16[i]; 
+            let iy = poisson_disc_16[i+1]; 
+            sample_uv = vertex.uv + R_i * vec2(ix * dx, iy * dy);
             let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
             var d = (qi - p);
             let di = length(d);
             d /=  di;
 
             let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
-
-
-            ao_near_x += rho * clamp(dot(n, d), 0.0, 1.0);
-            sample_uv.x += 2.0 * dx;
+            // ao_near_x += rho * clamp(dot(n, d), 0.0, 1.0);
+            ao_near.x += rho * max(dot(n, d), 0.0);
         }
-        sample_uv.x -= 2.0 * dx * f32(num_samples_x);
-        sample_uv.y += 2.0 * dy;
+        ao_near.y = 16.0;
+    } else {
+        for (var i: u32 = 0; i < num_samples_x; i++) {
+            for (var j: u32 = 0; j < num_samples_x; j++) {
+                let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
+                var d = (qi - p);
+                let di = length(d);
+                d /=  di;
+
+                let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
+
+
+                ao_near.x += rho * clamp(dot(n, d), 0.0, 1.0);
+                // ao_near.x += rho * max(dot(n, d), 0.0);
+                sample_uv.x += 2.0 * dx;
+            }
+            sample_uv.x -= 2.0 * dx * f32(num_samples_x);
+            sample_uv.y += 2.0 * dy;
+        }
+        ao_near.y = N;
     }
 
-    var ao_near = vec2(ao_near_x, f32(N));
 
 
     // NOTE: CALC AO FAR
-
-
     let uvb = texture_gather_weights(prev_ao_view,vertex.uv);
     // when doing a texure gather the values are laid out in the following order
     //    val3 val2
@@ -213,26 +248,24 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     const tn = 8.0;
     for (var i: u32 = 0; i < 4; i ++) {
         let ni = vec3(superpixel_nx[i], superpixel_ny[i], superpixel_nz[i]);
-        if abs(length(ni) - 1.0) > 0.000001 {
-            return vec4(1.0);
-        }
         let ndot = dot(n, ni);
         // NOTE: gotta clamp the ndot + 1 cause it might be sliiiightly less than 0.0,
         // which causes all kinds weird large black square artefacts that flicker occasionally
         // w_normal[i] = pow((ndot + 1.0) / 2.0, tn);
-        w_normal[i] = pow(max(0.0, (ndot + 1.0)) / 2.0, tn);
+        // w_normal[i] = pow(max(0.0, (ndot + 1.0)) / 2.0, tn);
+        w_normal[i] = pow((ndot + 1.1) / 2.1, tn);
     }
 
     let superpixel_z = -textureGather(2, prev_pos_view, prev_pos_sampler, vertex.uv);
     var w_depth: vec4f;
     const tz = 16.0;
     for (var i: u32 = 0; i < 4; i ++) {
-        w_depth[i] = pow(1.0 / (1.0 + (abs(superpixel_z[i] - pz)) / 100.0), tz);
-        w_depth[i] = pow(1.0 / (1.0 + (abs(superpixel_z[i] - pz)) / 100.0), tz);
+        // w_depth[i] = pow(1.0 / (1.0 + (abs(superpixel_z[i] - pz)) / 100.0), tz);
+        w_depth[i] = pow(1.0 / (1.0 + 0.2 * (abs(superpixel_z[i] - pz))), tz);
     }
 
     var w_bilateral = w_bilinear * w_normal * w_depth;
-    // w_bilateral = vec4(0.0);
+    // w_bilateral = w_bilinear;
     // w_bilateral = w_bilinear *  w_depth;
     // w_bilateral = w_bilinear * w_normal;
 
@@ -242,13 +275,13 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // QUESTION: should it be normalized or not
     // var ao_far = dot(w_bilateral, superpixel_ao) / w_tot;
     var ao_far: vec3f;
+    // ao_far[0] = max(max(superpixel_ao0.x, superpixel_ao0.y), max(superpixel_ao0.x, superpixel_ao0.y));
     ao_far[0] = dot(w_bilateral, superpixel_ao0);
     ao_far[1] = dot(w_bilateral, superpixel_ao1);
     ao_far[2] = dot(w_bilateral, superpixel_ao2);
     let w_tot = dot(w_bilateral, vec4(1.0));
-    // ao_far /= w_tot ;
+    ao_far /= w_tot;
 
-    // ao_far.y = 0.2;
     // ao_far.z = 0.2;
     
 
@@ -263,14 +296,14 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     } 
 
 
-    let is_last_pass = false;
-    if  is_last_pass {
-        let ao_max = max(ao_near[0] / ao_near[1], ao_far[0]);
-        let ao_avg = (ao_far[1] + ao_near[0]) / (ao_far[2] + ao_near[1]);
-        let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
-        c = vec3(ao_final);
-        return vec4(c,1.0);
-    }
+    // let is_last_pass = false;
+    // if  is_last_pass {
+    //     let ao_max = max(ao_near[0] / ao_near[1], ao_far[0]);
+    //     let ao_avg = (ao_far[1] + ao_near[0]) / (ao_far[2] + ao_near[1]);
+    //     let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
+    //     c = vec3(ao_final);
+    //     return vec4(c,1.0);
+    // }
 
     var ao_comb =  vec3(0.0);
     if ao_near[1] > 0 {
@@ -281,6 +314,13 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     ao_comb[1] = ao_near[0] + ao_far[1];
     ao_comb[2] = ao_near[1] + ao_far[2];
     c = ao_comb;
+
+    if ao_params.pass_i == 0 {
+        let ao_max = ao_comb[0];
+        let ao_avg = ao_comb[1] / ao_comb[2];
+        let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_comb);
+        c = vec3(ao_final);
+    }
     // c = ao_far;
     return vec4(c, 1.0);
 }
@@ -292,6 +332,9 @@ fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let dx = 1.0 / f32(dim.x);
     let dy = 1.0 / f32(dim.y);
 
+    let n = textureSample(normal_view, normal_sampler, vertex.uv);
+    let p = textureSample(pos_view, pos_sampler, vertex.uv);
+
 
     // NOTE: actual gaussian kernel should be something like 
     // https://stackoverflow.com/questions/20746172/blur-an-image-using-3x3-gaussian-kernel
@@ -300,25 +343,41 @@ fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // NOTE: use weights that sum to 1 over 3x3 
     // const weights = 0.25  * vec3(0.25, 0.5, 1.0);
     var weights = 0.25  * vec3(0.25, 0.5, 1.0);
-    // weights += 0.08;
-    // const weights = 0.3  * vec3(0.25, 0.5, 1.0);
-    // const weights = 0.4 * vec3(0.25, 0.5, 1.0);
+    weights =  vec3(0.25, 0.5, 1.0);
 
     var uv = vertex.uv - vec2(dx,dy);
     var ao_blur = vec3(0.0);
+    var w_tot = 0.0;
     for (var i: u32 = 0; i < 3; i++) {
         for (var j: u32 = 0; j < 3; j++) {
+            let ni = textureSample(normal_view, normal_sampler, uv);
+            let pz = textureSample(pos_view, pos_sampler, uv).z;
+
+            var w_normal = (dot(n, ni) + 1.2) / 2.2;
+            w_normal = pow(w_normal, 8.0);
+
+            var w_depth = 1.0 / (1.0 + abs(p.z - pz) * 0.2);
+            w_depth = pow(w_depth, 16.0);
+
             // NOTE: will be 0 in corners, 1 on middle sides and 2 in middle
             let weight_i = (i % 2) + (j % 2); 
-            let w = weights[weight_i];
-            let ao = textureSample(ao_view, ao_sampler, uv).xyz;
+            let w_gauss = weights[weight_i];
 
+
+            var w = w_normal * w_depth * w_gauss;
+            // w = w_gauss;
+            w_tot += w;
+            
+            let ao = textureSample(ao_view, ao_sampler, uv).xyz;
             ao_blur += w * ao;
             uv.x += dx;
         }
         uv.x -= 3.0 * dx;
         uv.y += dy;
     }
+
+
+    ao_blur /= w_tot;
 
 
     return vec4(ao_blur, 1.0);
@@ -349,18 +408,25 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let ambient = 0.2;
     c += ambient;
 
+    if false{
+    // if true {
+        return vec4(c, 1.0);
+    }
+
     // c = vec3(0.0);
     let ao = textureSample(ao_view, ao_sampler, vertex.uv);
-    // c = ao.xyz;
-
 
         
-    let ao_max = ao[0];
-    let ao_avg = ao[1]/ao[2];
-    let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
+    // let ao_max = ao[0];
+    // let ao_avg = ao[1]/ao[2];
+    // let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
     // c = vec3(ao_final);
     // c = vec3(1.0 - ao_final);
-    c = vec3(1.0 - ao_avg);
+    c = vec3(1.0 - ao[0]);
+    // let k = floor(10.0 * vertex.uv.x) / 10.0;
+    // c = vec3(k);
+    c = pow(c, vec3<f32>(2.2));
+
     
     // depth = linearize_depth(depth);
     // let a = -vec3(view_pos.z) / 10.0;

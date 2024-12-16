@@ -89,6 +89,12 @@ pub struct BlurParams {
 
     pub ao_view: gpu::TextureView,
     pub ao_sampler: gpu::Sampler,
+
+    pub pos_view: gpu::TextureView,
+    pub pos_sampler: gpu::Sampler,
+
+    pub normal_view: gpu::TextureView,
+    pub normal_sampler: gpu::Sampler,
 }
 
 #[derive(blade_macros::ShaderData)]
@@ -771,7 +777,7 @@ impl State {
         let sponza_vertices = load_sponza();
         let sibekik_cathedrals = load_cathedral();
         let a = sponza_vertices.len() / 3;
-        dbg!(a);
+        // dbg!(a);
         // let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
         let gpu_sponza = upload_vertices(sibekik_cathedrals, &ctx);
         meshes.clear();
@@ -901,12 +907,6 @@ impl State {
             let ao_target = &self.ao_textures.textures[i];
             let is_first_pass = i == NUM_AO_TEXTURES - 1;
 
-            let ao_prev = if is_first_pass {
-                &self.ao_textures.dummy_texture
-            } else {
-                &self.ao_textures.textures[i + 1]
-            };
-
             // NOTE: calc ao pass
             if let mut calc_ao_pass = self.command_encoder.render(
                 format!("calc ao {i}").as_str(),
@@ -961,6 +961,7 @@ impl State {
             // NOTE: blur ao pass
 
             let ao_blur_target = &self.ao_textures.textures_after_blur[i];
+            let dpn = &self.downsample_textures.textures[i];
             if let mut blur_ao_pass = self.command_encoder.render(
                 format!("blur ao {i}").as_str(),
                 gpu::RenderTargetSet {
@@ -987,6 +988,10 @@ impl State {
                             ao_target.size.width,
                             ao_target.size.height,
                         ),
+                        pos_view: dpn.pos.view,
+                        pos_sampler: dpn.pos.sampler,
+                        normal_view: dpn.normal.view,
+                        normal_sampler: dpn.normal.sampler,
                     },
                 );
                 rc.bind_vertex(0, self.screen_quad_buf);
@@ -1254,7 +1259,7 @@ impl Camera {
             yaw: 0.0,
             pitch: 0.0,
             // vfov_rad: TAU / 4.0,
-            vfov_rad: 70.0_f32.to_radians(),
+            vfov_rad: 40.0_f32.to_radians(),
             aspect,
         }
     }
@@ -1537,9 +1542,9 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window_attributes = winit::window::Window::default_attributes()
         .with_title("ssao")
-        .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
         // .with_inner_size(winit::dpi::PhysicalSize::new(512, 512))
-        // .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
+        .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
         // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         ;
 
