@@ -153,8 +153,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // NOTE: kernel size
     // let R_i = max(floor(min(r_max, r_i)), 1.0);
     var R_i = floor(min(r_max, r_i));
-    // FIXME: uncomment above
-    R_i = 5.0;
+    // R_i = 5.0;
 
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
@@ -213,8 +212,15 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // QUESTION: better to write loop or better to have it all written out
     const tn = 8.0;
     for (var i: u32 = 0; i < 4; i ++) {
-        let ndot = dot(n, vec3(superpixel_nx[i], superpixel_ny[i], superpixel_nz[i]));
-        w_normal[i] = pow(0.5*ndot + 0.5, tn);
+        let ni = vec3(superpixel_nx[i], superpixel_ny[i], superpixel_nz[i]);
+        if abs(length(ni) - 1.0) > 0.000001 {
+            return vec4(1.0);
+        }
+        let ndot = dot(n, ni);
+        // NOTE: gotta clamp the ndot + 1 cause it might be sliiiightly less than 0.0,
+        // which causes all kinds weird large black square artefacts that flicker occasionally
+        // w_normal[i] = pow((ndot + 1.0) / 2.0, tn);
+        w_normal[i] = pow(max(0.0, (ndot + 1.0)) / 2.0, tn);
     }
 
     let superpixel_z = -textureGather(2, prev_pos_view, prev_pos_sampler, vertex.uv);
@@ -226,7 +232,8 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     var w_bilateral = w_bilinear * w_normal * w_depth;
-    // w_bilateral = w_bilinear * w_normal * w_depth;
+    // w_bilateral = vec4(0.0);
+    // w_bilateral = w_bilinear *  w_depth;
     // w_bilateral = w_bilinear * w_normal;
 
     let superpixel_ao0 = textureGather(0, prev_ao_view, prev_ao_sampler, vertex.uv);
@@ -240,12 +247,15 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     ao_far[2] = dot(w_bilateral, superpixel_ao2);
     let w_tot = dot(w_bilateral, vec4(1.0));
     // ao_far /= w_tot ;
+
+    // ao_far.y = 0.2;
+    // ao_far.z = 0.2;
     
 
     var c: vec3f;
     let is_first_pass = ao_params.pass_i == ao_params.num_passes - 1; 
     if is_first_pass {
-        var res: vec3f;
+        var res = vec3(0.0);
         res[0] = ao_near[0] / ao_near[1];
         res[1] = ao_near[0];
         res[2] = ao_near[1];
@@ -253,8 +263,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     } 
 
 
-    // let is_last_pass = ao_params.pass_i == 0;
-    let is_last_pass = ao_params.pass_i == 0;
+    let is_last_pass = false;
     if  is_last_pass {
         let ao_max = max(ao_near[0] / ao_near[1], ao_far[0]);
         let ao_avg = (ao_far[1] + ao_near[0]) / (ao_far[2] + ao_near[1]);
@@ -263,8 +272,12 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
         return vec4(c,1.0);
     }
 
-    var ao_comb: vec3f;
-    ao_comb[0] = max(ao_near[0] / ao_near[1], ao_far[0]);
+    var ao_comb =  vec3(0.0);
+    if ao_near[1] > 0 {
+        ao_comb[0] = max(ao_near[0] / ao_near[1], ao_far[0]);
+    } else {
+        ao_comb[0] = ao_far[0];
+    }
     ao_comb[1] = ao_near[0] + ao_far[1];
     ao_comb[2] = ao_near[1] + ao_far[2];
     c = ao_comb;
@@ -278,6 +291,7 @@ fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let dim = textureDimensions(ao_view).xy;
     let dx = 1.0 / f32(dim.x);
     let dy = 1.0 / f32(dim.y);
+
 
     // NOTE: actual gaussian kernel should be something like 
     // https://stackoverflow.com/questions/20746172/blur-an-image-using-3x3-gaussian-kernel
@@ -341,11 +355,12 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
 
         
-    // let ao_max = ao[0];
-    // let ao_avg = ao[1] / ao[2];
-    // // let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
-    let ao_final = ao[0];
-    c = vec3(1.0 - ao_final);
+    let ao_max = ao[0];
+    let ao_avg = ao[1]/ao[2];
+    let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
+    // c = vec3(ao_final);
+    // c = vec3(1.0 - ao_final);
+    c = vec3(1.0 - ao_avg);
     
     // depth = linearize_depth(depth);
     // let a = -vec3(view_pos.z) / 10.0;

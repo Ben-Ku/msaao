@@ -1253,7 +1253,8 @@ impl Camera {
             pos: Vec3A::ZERO,
             yaw: 0.0,
             pitch: 0.0,
-            vfov_rad: TAU / 4.0,
+            // vfov_rad: TAU / 4.0,
+            vfov_rad: 70.0_f32.to_radians(),
             aspect,
         }
     }
@@ -1536,8 +1537,9 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window_attributes = winit::window::Window::default_attributes()
         .with_title("ssao")
-        // .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
-        .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
+        .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(512, 512))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
         // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         ;
 
