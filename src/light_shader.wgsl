@@ -1,5 +1,3 @@
-// var depth_view: texture_depth_2d;
-// var depth_sampler: sampler;
 
 var pos_view: texture_2d<f32>;
 var pos_sampler: sampler;
@@ -173,7 +171,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var R_i = floor(min(r_max, r_i));
     R_i = max(R_i, 2.0);
     // NOTE: removeme?
-    // R_i = 5.0;
+    R_i = 5.0;
 
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
