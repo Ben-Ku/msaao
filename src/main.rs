@@ -1247,6 +1247,9 @@ impl State {
                     winit::keyboard::KeyCode::KeyY => {
                         self.camera.load_state();
                     }
+                    winit::keyboard::KeyCode::KeyR => {
+                        self.camera.reset();
+                    }
 
                     winit::keyboard::KeyCode::ArrowLeft => {
                         let mut i = self.mesh_to_draw;
@@ -1389,6 +1392,10 @@ impl Camera {
         self.pitch = args.next().unwrap().parse().unwrap();
         self.vfov_rad = args.next().unwrap().parse().unwrap();
         self.aspect = args.next().unwrap().parse().unwrap();
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::default_from_aspect(self.aspect);
     }
 }
 pub fn load_sponza() -> CpuMesh {

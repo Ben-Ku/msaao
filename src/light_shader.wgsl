@@ -130,7 +130,7 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
     let idx_1 = idx[1];
     let p1 = vec3(subpixel_px[idx_1], subpixel_py[idx_1], subpixel_pz[idx_1]);
     let n1 = vec3(subpixel_nx[idx_1], subpixel_ny[idx_1], subpixel_nz[idx_1]);
-    if p3z - p0z <= d_thresh {
+    if p3z - p0z <= d_thresh && true {
     // if diffy <= d_thresh {
         let idx_2 = idx[2];
         let p2 = vec3(subpixel_px[idx_2], subpixel_py[idx_2], subpixel_pz[idx_2]);
@@ -185,7 +185,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     // NOTE: kernel size
     var R_i = floor(min(r_max, r_i));
-    // R_i = max(R_i, 2.0);
+    R_i = max(R_i, 2.0);
     // R_i = 5.0;
 
 
@@ -304,6 +304,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
         let ao_avg = ao_comb[1] / ao_comb[2];
         let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_comb);
         c = vec3(ao_final);
+        c = vec3(ao_final);
     }
     return vec4(c, 1.0);
 }
@@ -345,11 +346,11 @@ fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
 
             var w = w_normal * w_depth * w_gauss;
-            // w = w_gauss;
             w_tot += w;
             
             let ao = textureSample(ao_view, ao_sampler, uv).xyz;
             ao_blur += w * ao;
+
             uv.x += dx;
         }
         uv.x -= 3.0 * dx;
