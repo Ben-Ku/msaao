@@ -171,9 +171,9 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // NOTE: kernel size
     // let R_i = max(floor(min(r_max, r_i)), 1.0);
     var R_i = floor(min(r_max, r_i));
-    // R_i = max(R_i, 2.0);
+    R_i = max(R_i, 2.0);
     // NOTE: removeme?
-    R_i = 5.0;
+    // R_i = 5.0;
 
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
@@ -188,6 +188,8 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
     var ao_near = vec2(0.0);
+    var use_weird_normal_w = true;
+    use_weird_normal_w = false;
     if ao_params.pass_i == 0 {
         for (var i: u32 = 0; i < 32; i = i + 2) {
             let ix = poisson_disc_16[i]; 
@@ -200,7 +202,13 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
             let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
             // ao_near_x += rho * clamp(dot(n, d), 0.0, 1.0);
-            ao_near.x += rho * max(dot(n, d), 0.0);
+            // ao_near.x += rho * max(dot(n, d), 0.0);
+            if use_weird_normal_w {
+                let ni = textureSample(normal_view, normal_sampler, sample_uv);
+                ao_near.x += rho * max(dot(n, d), 0.0) * ni.w;
+            } else {
+                ao_near.x += rho * max(dot(n, d), 0.0);
+            }
         }
         ao_near.y = 16.0;
     } else {
@@ -208,7 +216,6 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
             for (var j: u32 = 0; j < num_samples_x; j++) {
                 let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
                 // REMOVEME: maybe remove cause 
-                let ni = textureSample(normal_view, normal_sampler, sample_uv).xyz;
                 var d = (qi - p);
                 let di = length(d);
                 d /=  di;
@@ -216,9 +223,12 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
                 let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
 
 
-                // REMOVEME: maybe remove cause 
-                ao_near.x += rho * clamp(dot(n, d), 0.0, 1.0);
-                // ao_near.x += rho * max(dot(n, d), 0.0) * ni.z;
+                if use_weird_normal_w {
+                    let ni = textureSample(normal_view, normal_sampler, sample_uv);
+                    ao_near.x += rho * max(dot(n, d), 0.0) * ni.w;
+                } else {
+                    ao_near.x += rho * max(dot(n, d), 0.0);
+                }
                 sample_uv.x += 2.0 * dx;
             }
             sample_uv.x -= 2.0 * dx * f32(num_samples_x);
