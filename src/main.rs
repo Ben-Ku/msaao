@@ -775,13 +775,14 @@ impl State {
         });
 
         let sponza_vertices = load_sponza();
-        let sibekik_cathedrals = load_cathedral();
-        let a = sponza_vertices.len() / 3;
-        // dbg!(a);
+        let sibekik_cathedral = load_cathedral();
+        let vertices = sibekik_cathedral;
+        let a = vertices.len() / 3;
+        dbg!(a);
         // let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
-        let gpu_sponza = upload_vertices(sibekik_cathedrals, &ctx);
+        let gpu_vertices = upload_vertices(vertices, &ctx);
         meshes.clear();
-        meshes.push(gpu_sponza);
+        meshes.push(gpu_vertices);
 
         // let g_buffer = GBuffer::new(&ctx, width, height);
 
@@ -1200,7 +1201,7 @@ impl State {
 
                         dbg!(self.input_state.use_blur);
                     }
-                    winit::keyboard::KeyCode::KeyU => {
+                    winit::keyboard::KeyCode::KeyZ => {
                         self.camera.save_state();
                     }
                     winit::keyboard::KeyCode::KeyY => {
@@ -1542,9 +1543,9 @@ fn main() {
     let event_loop = winit::event_loop::EventLoop::new().unwrap();
     let window_attributes = winit::window::Window::default_attributes()
         .with_title("ssao")
-        // .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
+        .with_inner_size(winit::dpi::PhysicalSize::new(1024, 1024))
         // .with_inner_size(winit::dpi::PhysicalSize::new(512, 512))
-        .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
+        // .with_inner_size(winit::dpi::PhysicalSize::new(2048,2048))
         // .with_fullscreen(Some(winit::window::Fullscreen::Borderless(None)));
         ;
 
