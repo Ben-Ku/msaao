@@ -1,5 +1,5 @@
-var depth_view: texture_depth_2d;
-var depth_sampler: sampler;
+// var depth_view: texture_depth_2d;
+// var depth_sampler: sampler;
 
 var pos_view: texture_2d<f32>;
 var pos_sampler: sampler;
@@ -63,7 +63,7 @@ const poisson_disc_16 = array(
     );
 
 struct DownSampleOutput {
-    @builtin(frag_depth) depth: f32,
+    // @builtin(frag_depth) depth: f32,
     @location(0) pos: vec4<f32>,
     @location(1) normal: vec4<f32>
 };
@@ -149,7 +149,8 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
 
     //NOTE: revert the negative z we added in the beginning
     p_new.z = -p_new.z;
-    let output = DownSampleOutput(0.0, vec4(p_new, 1.0), vec4(n_new, 1.0));
+    // let output = DownSampleOutput(0.0, vec4(p_new, 1.0), vec4(n_new, 1.0));
+    let output = DownSampleOutput(vec4(p_new, 1.0), vec4(n_new, 1.0));
     
     return output;
 }
@@ -170,8 +171,9 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // NOTE: kernel size
     // let R_i = max(floor(min(r_max, r_i)), 1.0);
     var R_i = floor(min(r_max, r_i));
-    R_i = max(R_i, 2.0);
-    // R_i = 5.0;
+    // R_i = max(R_i, 2.0);
+    // NOTE: removeme?
+    R_i = 5.0;
 
     let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
@@ -205,6 +207,8 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
         for (var i: u32 = 0; i < num_samples_x; i++) {
             for (var j: u32 = 0; j < num_samples_x; j++) {
                 let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
+                // REMOVEME: maybe remove cause 
+                let ni = textureSample(normal_view, normal_sampler, sample_uv).xyz;
                 var d = (qi - p);
                 let di = length(d);
                 d /=  di;
@@ -212,8 +216,9 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
                 let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
 
 
+                // REMOVEME: maybe remove cause 
                 ao_near.x += rho * clamp(dot(n, d), 0.0, 1.0);
-                // ao_near.x += rho * max(dot(n, d), 0.0);
+                // ao_near.x += rho * max(dot(n, d), 0.0) * ni.z;
                 sample_uv.x += 2.0 * dx;
             }
             sample_uv.x -= 2.0 * dx * f32(num_samples_x);
@@ -395,7 +400,7 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
 
     let ws_normal = transpose(globals.mv_rot) * vec4(normal, 0.0);
 
-    var depth = textureSample(depth_view, depth_sampler, vertex.uv);
+    // var depth = textureSample(depth_view, depth_sampler, vertex.uv);
 
     let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
     // let ndotl = max(dot(normal.xyz, -sun_dir), 0.0);
@@ -425,6 +430,7 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
     c = vec3(1.0 - ao[0]);
     // let k = floor(10.0 * vertex.uv.x) / 10.0;
     // c = vec3(k);
+    // c = pow(c, vec3<f32>(1.0 / 2.2));
     c = pow(c, vec3<f32>(2.2));
 
     

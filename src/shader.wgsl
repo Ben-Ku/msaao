@@ -40,7 +40,9 @@ struct FragmentOutput {
 @fragment
 fn fs_main(vs_out: VertexOutput) -> FragmentOutput {
     let view_pos = vec4(vs_out.view_pos, 0.0);
-    let view_normal = vec4(vs_out.view_normal, 0.0);
+
+    let s = sign(abs(view_pos.z));
+    let view_normal = vec4(vs_out.view_normal, s);
 
 
     return FragmentOutput(view_pos, view_normal);

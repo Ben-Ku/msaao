@@ -73,9 +73,8 @@ pub struct GeometryParams {
 #[derive(blade_macros::ShaderData)]
 pub struct DepthPosNormalParams {
     pub globals: Globals,
-    pub depth_view: gpu::TextureView,
-    pub depth_sampler: gpu::Sampler,
-
+    // pub depth_view: gpu::TextureView,
+    // pub depth_sampler: gpu::Sampler,
     pub pos_view: gpu::TextureView,
     pub pos_sampler: gpu::Sampler,
 
@@ -623,13 +622,14 @@ impl Pipelines {
                 unclipped_depth: false,
                 wireframe: false,
             },
-            depth_stencil: Some(gpu::DepthStencilState {
-                format: gpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: gpu::CompareFunction::Always,
-                stencil: gpu::StencilState::default(),
-                bias: gpu::DepthBiasState::default(),
-            }),
+            // depth_stencil: Some(gpu::DepthStencilState {
+            //     format: gpu::TextureFormat::Depth32Float,
+            //     depth_write_enabled: true,
+            //     depth_compare: gpu::CompareFunction::Always,
+            //     stencil: gpu::StencilState::default(),
+            //     bias: gpu::DepthBiasState::default(),
+            // }),
+            depth_stencil: None,
             fragment: light_shader.at("fs_downsample"),
             color_targets: &[
                 gpu::ColorTargetState {
@@ -739,7 +739,7 @@ impl State {
                 validation: true,
                 timing: false,
                 capture: false,
-                overlay: false,
+                overlay: true,
                 device_id: 0,
             })
             .unwrap()
@@ -869,19 +869,20 @@ impl State {
                             finish_op: gpu::FinishOp::Store,
                         },
                     ],
-                    depth_stencil: Some(gpu::RenderTarget {
-                        view: textures_to.depth.view,
-                        init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
-                        finish_op: gpu::FinishOp::Store,
-                    }),
+                    // depth_stencil: Some(gpu::RenderTarget {
+                    //     view: textures_to.depth.view,
+                    //     init_op: gpu::InitOp::Clear(gpu::TextureColor::White),
+                    //     finish_op: gpu::FinishOp::Store,
+                    // }),
+                    depth_stencil: None,
                 },
             ) {
                 let mut rc = depth_downsample_pass.with(&self.pipelines.depth_downsample);
                 rc.bind(
                     0,
                     &DepthPosNormalParams {
-                        depth_view: textures_from.depth.view,
-                        depth_sampler: textures_from.depth.sampler,
+                        // depth_view: textures_from.depth.view,
+                        // depth_sampler: textures_from.depth.sampler,
                         pos_view: textures_from.pos.view,
                         pos_sampler: textures_from.pos.sampler,
                         normal_view: textures_from.normal.view,
@@ -1532,9 +1533,9 @@ pub fn parse_obj_file<P: AsRef<std::path::Path>>(path: P) -> CpuMesh {
         // while let Some(line) = file.read_line()
     }
 
-    dbg!(vertices.len());
-    dbg!(normals.len());
-    dbg!(indices.len());
+    // dbg!(vertices.len());
+    // dbg!(normals.len());
+    // dbg!(indices.len());
 
     CpuMesh { vertices, indices }
 }
