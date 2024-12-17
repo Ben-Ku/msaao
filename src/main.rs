@@ -748,6 +748,7 @@ pub struct State {
     pub downsample_textures: DownsampleTextures,
     pub ao_textures: AOTextures,
     pub input_state: InputState,
+    pub mesh_to_draw: usize,
 }
 
 #[derive(Default)]
@@ -799,15 +800,17 @@ impl State {
             buffer_count: 1,
         });
 
-        let sponza_vertices = load_sponza();
-        let sibekik_cathedral = load_cathedral();
-        let vertices = sibekik_cathedral;
-        let a = vertices.len() / 3;
-        dbg!(a);
+        let sponza = load_sponza();
+        let sibenik_cathedral = load_cathedral();
+
+        let sibenic_mesh = upload_mesh(&ctx, sibenik_cathedral);
+
+        // dbg!(a);
         // let gpu_sponza = upload_vertices(sponza_vertices, &ctx);
-        let gpu_vertices = upload_vertices(vertices, &ctx);
-        meshes.clear();
-        meshes.push(gpu_vertices);
+        // let gpu_vertices = upload_vertices(vertices, &ctx);
+        let sponza_mesh = upload_mesh(&ctx, sponza);
+        meshes.push(sibenic_mesh);
+        meshes.push(sponza_mesh);
 
         // let g_buffer = GBuffer::new(&ctx, width, height);
 
@@ -871,6 +874,7 @@ impl State {
             input_state,
             delta_time: 0.1,
             prev_time: std::time::SystemTime::now(),
+            mesh_to_draw: 0,
         }
     }
 
@@ -1084,8 +1088,18 @@ impl State {
                 },
             );
 
-            for mesh in self.meshes.iter() {
-                rc.bind_vertex(0, mesh.vertex_buf);
+            let mesh = &self.meshes[self.mesh_to_draw];
+            rc.bind_vertex(0, mesh.vertex_buf);
+            if let Some(index_buf) = mesh.index_buf {
+                rc.draw_indexed(
+                    index_buf,
+                    gpu::IndexType::U32,
+                    mesh.num_indices as _,
+                    0,
+                    0,
+                    1,
+                );
+            } else {
                 rc.draw(0, mesh.num_vertices as _, 0, 1);
             }
         }
@@ -1234,6 +1248,22 @@ impl State {
                         self.camera.load_state();
                     }
 
+                    winit::keyboard::KeyCode::ArrowLeft => {
+                        let mut i = self.mesh_to_draw;
+                        let n = self.meshes.len();
+                        i += n;
+                        i -= 1;
+                        i %= n;
+                        self.mesh_to_draw = i;
+                    }
+                    winit::keyboard::KeyCode::ArrowRight => {
+                        let mut i = self.mesh_to_draw;
+                        let n = self.meshes.len();
+                        i += 1;
+                        i %= n;
+                        self.mesh_to_draw = i;
+                    }
+
                     _ => {}
                 }
             }
@@ -1361,22 +1391,24 @@ impl Camera {
         self.aspect = args.next().unwrap().parse().unwrap();
     }
 }
-pub fn load_sponza() -> Vec<Vertex> {
+pub fn load_sponza() -> CpuMesh {
     dbg!("loading sponza");
     let path = std::path::Path::new("src/assets/sponza/sponza.obj");
     let mesh = parse_obj_file(path);
-    let vertices = turn_mesh_into_pure_vertex_list(mesh);
+    // let vertices = turn_mesh_into_pure_vertex_list(mesh);
 
-    vertices
+    mesh
+    // vertices
 }
 
-pub fn load_cathedral() -> Vec<Vertex> {
+pub fn load_cathedral() -> CpuMesh {
     dbg!("loading sibenik cathedral");
     let path = std::path::Path::new("src/assets/sibenik_cathedral/sibenik.obj");
     let mesh = parse_obj_file(path);
-    let vertices = turn_mesh_into_pure_vertex_list(mesh);
+    // let vertices = turn_mesh_into_pure_vertex_list(mesh);
 
-    vertices
+    // vertices
+    mesh
 }
 
 // pub fn load_

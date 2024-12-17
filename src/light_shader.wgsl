@@ -153,10 +153,24 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
     return output;
 }
 
+fn calc_oclusion_term(sample_uv: vec2f, p: vec3f, n: vec3f, d_max: f32) -> f32 {
+    
+    let qi = textureSample(pos_view, pos_sampler, sample_uv);
+    var d = (qi.xyz - p);
+    let di = length(d);
+    d /=  di;
+
+    let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
+
+    let res = rho * max(dot(n, d), 0.0) * qi.w;
+    return res;
+}
+
 
 @fragment
 fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let p = textureSample(pos_view, pos_sampler, vertex.uv).xyz;
+    let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
 
     //NOTE: calc ao near
     let r_max = 5.0;
@@ -166,14 +180,14 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let pz = -p.z;
     let r_i = ao_params.ri_almost / pz; 
 
-    // NOTE: kernel size
-    // let R_i = max(floor(min(r_max, r_i)), 1.0);
-    var R_i = floor(min(r_max, r_i));
-    R_i = max(R_i, 2.0);
-    // NOTE: removeme?
-    R_i = 5.0;
+    let IS_FIRT_PASS = ao_params.pass_i == ao_params.num_passes - 1;
+    let IS_LAST_PASS = ao_params.pass_i == 0;
 
-    let n = textureSample(normal_view, normal_sampler, vertex.uv).xyz;
+    // NOTE: kernel size
+    var R_i = floor(min(r_max, r_i));
+    // R_i = max(R_i, 2.0);
+    // R_i = 5.0;
+
 
     // FIXME: should be 0 samples sometimes
     let num_samples_x = u32(R_i) + 1;
@@ -187,46 +201,24 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
     var ao_near = vec2(0.0);
     var use_weird_normal_w = true;
-    use_weird_normal_w = false;
-    if ao_params.pass_i == 100 {
+    // use_weird_normal_w = false;
+    // NOTE: for finest res sample using poisson disc
+    if IS_LAST_PASS {
         for (var i: u32 = 0; i < 32; i = i + 2) {
             let ix = poisson_disc_16[i]; 
             let iy = poisson_disc_16[i+1]; 
             sample_uv = vertex.uv + R_i * vec2(ix * dx, iy * dy);
-            let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
-            var d = (qi - p);
-            let di = length(d);
-            d /=  di;
 
-            let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
-            // ao_near_x += rho * clamp(dot(n, d), 0.0, 1.0);
-            // ao_near.x += rho * max(dot(n, d), 0.0);
-            if use_weird_normal_w {
-                let ni = textureSample(normal_view, normal_sampler, sample_uv);
-                ao_near.x += rho * max(dot(n, d), 0.0) * ni.w;
-            } else {
-                ao_near.x += rho * max(dot(n, d), 0.0);
-            }
+            let o = calc_oclusion_term(sample_uv, p, n, d_max);
+            ao_near.x += o;
         }
         ao_near.y = 16.0;
+    // NOTE: for coarser resolutions sample in interleaved square
     } else {
         for (var i: u32 = 0; i < num_samples_x; i++) {
             for (var j: u32 = 0; j < num_samples_x; j++) {
-                let qi = textureSample(pos_view, pos_sampler, sample_uv).xyz;
-                // REMOVEME: maybe remove cause 
-                var d = (qi - p);
-                let di = length(d);
-                d /=  di;
-
-                let rho = 1.0 - min(1.0, pow(di/d_max, 2.0));
-
-
-                if use_weird_normal_w {
-                    let ni = textureSample(normal_view, normal_sampler, sample_uv);
-                    ao_near.x += rho * max(dot(n, d), 0.0) * ni.w;
-                } else {
-                    ao_near.x += rho * max(dot(n, d), 0.0);
-                }
+                let o = calc_oclusion_term(sample_uv, p, n, d_max);
+                ao_near.x += o;
                 sample_uv.x += 2.0 * dx;
             }
             sample_uv.x -= 2.0 * dx * f32(num_samples_x);
@@ -235,6 +227,10 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
         ao_near.y = N;
     }
 
+    if R_i < 1.0  {
+        // ao_near = vec2(0.0);
+        ao_near = vec2(0.0, 1.0);
+    }
 
 
     // NOTE: CALC AO FAR
