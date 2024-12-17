@@ -188,7 +188,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     var ao_near = vec2(0.0);
     var use_weird_normal_w = true;
     use_weird_normal_w = false;
-    if ao_params.pass_i == 0 {
+    if ao_params.pass_i == 100 {
         for (var i: u32 = 0; i < 32; i = i + 2) {
             let ix = poisson_disc_16[i]; 
             let iy = poisson_disc_16[i+1]; 

@@ -695,6 +695,31 @@ impl Pipelines {
             }],
         });
 
+        // NOTE: compute-pipelines
+        let compute_shader_cource = match std::fs::read_to_string("src/compute.wgsl") {
+            Ok(src) => src,
+            Err(err) => {
+                dbg!(err);
+                return None;
+            }
+        };
+
+        let compute_shader = match ctx.try_create_shader(gpu::ShaderDesc {
+            source: &compute_shader_cource,
+        }) {
+            Ok(shader) => shader,
+            Err(err) => {
+                dbg!(err);
+                return None;
+            }
+        };
+
+        let pipeline = ctx.create_compute_pipeline(gpu::ComputePipelineDesc {
+            name: "compute pipeline",
+            data_layouts: &[],
+            compute: compute_shader.at("main"),
+        });
+
         let last_modified = last_time_shader_modified();
         // let metadata = std::fs::Metadata:
         Some(Self {
@@ -1228,6 +1253,17 @@ impl State {
             }
         }
     }
+
+    // pub fn init_compute_stuff(&mut self) {
+
+    //     let shader =
+    //     let compute = self.ctx.create_compute_pipeline(gpu::ComputePipelineDesc {
+    //         name: "compute",
+    //         data_layouts: &[],
+    //         compute: ,
+    //     })
+
+    // }
 }
 
 impl Camera {
