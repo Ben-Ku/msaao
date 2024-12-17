@@ -180,7 +180,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let pz = -p.z;
     let r_i = ao_params.ri_almost / pz; 
 
-    let IS_FIRT_PASS = ao_params.pass_i == ao_params.num_passes - 1;
+    let IS_FIRST_PASS = ao_params.pass_i == ao_params.num_passes - 1;
     let IS_LAST_PASS = ao_params.pass_i == 0;
 
     // NOTE: kernel size
@@ -199,9 +199,9 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     let dy = 1.0 / dim.y;
 
     var sample_uv = vertex.uv - f32(R_i) * vec2(dx, dy);
-    var ao_near = vec2(0.0);
-    var use_weird_normal_w = true;
-    // use_weird_normal_w = false;
+    var near_occlusion = 0.0;
+    var num_samples = 0.0;
+
     // NOTE: for finest res sample using poisson disc
     if IS_LAST_PASS {
         for (var i: u32 = 0; i < 32; i = i + 2) {
@@ -210,27 +210,35 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
             sample_uv = vertex.uv + R_i * vec2(ix * dx, iy * dy);
 
             let o = calc_oclusion_term(sample_uv, p, n, d_max);
-            ao_near.x += o;
+            near_occlusion += o;
         }
-        ao_near.y = 16.0;
+        num_samples = 16.0;
     // NOTE: for coarser resolutions sample in interleaved square
     } else {
         for (var i: u32 = 0; i < num_samples_x; i++) {
             for (var j: u32 = 0; j < num_samples_x; j++) {
                 let o = calc_oclusion_term(sample_uv, p, n, d_max);
-                ao_near.x += o;
+                near_occlusion += o;
+
                 sample_uv.x += 2.0 * dx;
             }
             sample_uv.x -= 2.0 * dx * f32(num_samples_x);
             sample_uv.y += 2.0 * dy;
         }
-        ao_near.y = N;
+        num_samples = N;
     }
 
-    if R_i < 1.0  {
-        // ao_near = vec2(0.0);
-        ao_near = vec2(0.0, 1.0);
-    }
+    //NOTE: add small tolerance to avoid dividing by 0 later on
+    num_samples = max(num_samples , 0.001);
+
+    if IS_FIRST_PASS {
+        var res = vec3(0.0);
+        res[0] = near_occlusion / num_samples;
+        res[1] = near_occlusion ;
+        res[2] = num_samples;
+        return vec4(res,1.0);
+    } 
+    let ao_near = vec2(near_occlusion, num_samples);
 
 
     // NOTE: CALC AO FAR
@@ -274,63 +282,29 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     var w_bilateral = w_bilinear * w_normal * w_depth;
-    // w_bilateral = w_bilinear;
-    // w_bilateral = w_bilinear *  w_depth;
-    // w_bilateral = w_bilinear * w_normal;
 
     let superpixel_ao0 = textureGather(0, prev_ao_view, prev_ao_sampler, vertex.uv);
     let superpixel_ao1 = textureGather(1, prev_ao_view, prev_ao_sampler, vertex.uv);
     let superpixel_ao2 = textureGather(2, prev_ao_view, prev_ao_sampler, vertex.uv);
-    // QUESTION: should it be normalized or not
-    // var ao_far = dot(w_bilateral, superpixel_ao) / w_tot;
     var ao_far: vec3f;
-    // ao_far[0] = max(max(superpixel_ao0.x, superpixel_ao0.y), max(superpixel_ao0.x, superpixel_ao0.y));
     ao_far[0] = dot(w_bilateral, superpixel_ao0);
     ao_far[1] = dot(w_bilateral, superpixel_ao1);
     ao_far[2] = dot(w_bilateral, superpixel_ao2);
     let w_tot = dot(w_bilateral, vec4(1.0));
     ao_far /= w_tot;
-
-    // ao_far.z = 0.2;
     
-
-    var c: vec3f;
-    let is_first_pass = ao_params.pass_i == ao_params.num_passes - 1; 
-    if is_first_pass {
-        var res = vec3(0.0);
-        res[0] = ao_near[0] / ao_near[1];
-        res[1] = ao_near[0];
-        res[2] = ao_near[1];
-        return vec4(res,1.0);
-    } 
-
-
-    // let is_last_pass = false;
-    // if  is_last_pass {
-    //     let ao_max = max(ao_near[0] / ao_near[1], ao_far[0]);
-    //     let ao_avg = (ao_far[1] + ao_near[0]) / (ao_far[2] + ao_near[1]);
-    //     let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
-    //     c = vec3(ao_final);
-    //     return vec4(c,1.0);
-    // }
-
-    var ao_comb =  vec3(0.0);
-    if ao_near[1] > 0 {
-        ao_comb[0] = max(ao_near[0] / ao_near[1], ao_far[0]);
-    } else {
-        ao_comb[0] = ao_far[0];
-    }
+    var ao_comb: vec3f;
+    ao_comb[0] = max(ao_near[0] / ao_near[1], ao_far[0]);
     ao_comb[1] = ao_near[0] + ao_far[1];
     ao_comb[2] = ao_near[1] + ao_far[2];
-    c = ao_comb;
+    var c = ao_comb;
 
-    if ao_params.pass_i == 0 {
+    if IS_LAST_PASS {
         let ao_max = ao_comb[0];
         let ao_avg = ao_comb[1] / ao_comb[2];
         let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_comb);
         c = vec3(ao_final);
     }
-    // c = ao_far;
     return vec4(c, 1.0);
 }
 
@@ -348,11 +322,8 @@ fn fs_blur_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // NOTE: actual gaussian kernel should be something like 
     // https://stackoverflow.com/questions/20746172/blur-an-image-using-3x3-gaussian-kernel
     // these weights dont sum to 1 on 3x3 kernel but its what the paper said...
-    // let weights =  vec3(0.25, 0.5, 1.0);
-    // NOTE: use weights that sum to 1 over 3x3 
-    // const weights = 0.25  * vec3(0.25, 0.5, 1.0);
-    var weights = 0.25  * vec3(0.25, 0.5, 1.0);
-    weights =  vec3(0.25, 0.5, 1.0);
+    // turns out in their code they actually normalize by weight sum...
+    const weights = vec3(0.25, 0.5, 1.0);
 
     var uv = vertex.uv - vec2(dx,dy);
     var ao_blur = vec3(0.0);

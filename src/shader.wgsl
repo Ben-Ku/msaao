@@ -37,8 +37,9 @@ struct FragmentOutput {
 
 @fragment
 fn fs_main(vs_out: VertexOutput) -> FragmentOutput {
-
+    // is 0 if depth is 0
     let s = sign(abs(vs_out.view_pos.z));
+
     let view_pos = vec4(vs_out.view_pos, s);
 
     let dx = dpdx(view_pos.xyz);
@@ -47,9 +48,8 @@ fn fs_main(vs_out: VertexOutput) -> FragmentOutput {
     var n = cross(dy,dx);
     n = normalize(n);
 
-    // NOTE: magical sign used in og authors code 
+    // use true polygon normals (w value is not used)
     let view_normal = vec4(n, 1.0);
-
 
     return FragmentOutput(view_pos, view_normal);
 }
