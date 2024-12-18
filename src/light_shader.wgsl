@@ -302,8 +302,7 @@ fn fs_calc_ao(vertex: VertexOutput) -> @location(0) vec4<f32> {
     if IS_LAST_PASS {
         let ao_max = ao_comb[0];
         let ao_avg = ao_comb[1] / ao_comb[2];
-        let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_comb);
-        c = vec3(ao_final);
+        let ao_final = 1.0 - (1.0 - ao_max) * (1.0 - ao_avg);
         c = vec3(ao_final);
     }
     return vec4(c, 1.0);
@@ -379,20 +378,11 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // var depth = textureSample(depth_view, depth_sampler, vertex.uv);
 
     let sun_dir = normalize(vec3(0.5, -1.0, -0.8));
-    // let ndotl = max(dot(normal.xyz, -sun_dir), 0.0);
-    // let ndotl = max(dot(normal.xyz, -sun_dir), 0.0);
-
     let ndotl = max(dot(ws_normal.xyz, -sun_dir), 0.0);
     
 
-    c = vec3(ndotl);
-    let ambient = 0.2;
-    c += ambient;
 
-    if false{
-    // if true {
-        return vec4(c, 1.0);
-    }
+    // if false{
 
     // c = vec3(0.0);
     let ao = textureSample(ao_view, ao_sampler, vertex.uv);
@@ -404,16 +394,14 @@ fn fs_light(vertex: VertexOutput) -> @location(0) vec4<f32> {
     // c = vec3(ao_final);
     // c = vec3(1.0 - ao_final);
     c = vec3(1.0 - ao[0]);
+    // c = ao.xyz;
     // let k = floor(10.0 * vertex.uv.x) / 10.0;
     // c = vec3(k);
     // c = pow(c, vec3<f32>(1.0 / 2.2));
     c = pow(c, vec3<f32>(2.2));
 
     
-    // depth = linearize_depth(depth);
-    // let a = -vec3(view_pos.z) / 10.0;
 
-    // return vec4(a, 1.0);
     return vec4(c, 1.0);
 }
 
