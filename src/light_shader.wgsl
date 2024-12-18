@@ -143,7 +143,7 @@ fn fs_downsample(vertex: VertexOutput) -> DownSampleOutput {
         n_new = n1; 
     }
 
-    // n_new = normalize(n_new);
+    n_new = normalize(n_new);
 
     //NOTE: revert the negative z we added in the beginning
     p_new.z = -p_new.z;
