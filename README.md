@@ -5,7 +5,7 @@ Paper describing method: https://sci.utah.edu/~duong/papers/hoang-mssao-tvc-2012
 His reference code can be found here: https://hoang-dt.github.io/index.html
 
 Should run basically out of the box with rust installed just run "cargo run
---release" i command line from repos top folder
+--release" in command line from repos top folder
 
 Controls:
 move cam - wasd qe
